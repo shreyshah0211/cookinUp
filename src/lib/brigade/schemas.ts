@@ -8,6 +8,7 @@ export const StationSpecSchema = z.object({
   depends_on: z.array(z.string()).describe("ids of stations whose output this one needs"),
   model: z.string().describe("one of the allowed model ids"),
   token_budget: z.number().int().describe("max output tokens for this station"),
+  tools: z.array(z.enum(["web"])).describe("'web' only when the station needs facts from the live internet (news, prices, docs, recent events); otherwise an empty list"),
 });
 export type StationSpec = z.infer<typeof StationSpecSchema>;
 
@@ -43,6 +44,24 @@ export type Usage = { inputTokens: number; outputTokens: number; costUsd: number
 /** One earlier order in the same chat: what was asked and what the kitchen served. */
 export type Turn = { task: string; answer: string };
 
+/**
+ * Something that happened in the kitchen, for the bubbles: a chef thinking,
+ * using a tool (a cookbook for the web), or saying something to someone.
+ * `from`/`to` are station ids, "head" or "expo".
+ */
+export type KitchenEvent = {
+  id: number;
+  at: number;
+  from: string;
+  to?: string;
+  kind: "say" | "think" | "tool";
+  text: string;
+  detail?: string;
+  tool?: "web_search" | "ask_chef";
+  /** For tools: the call finished. */
+  done?: boolean;
+};
+
 export type StationStatus = "idle" | "waiting" | "cooking" | "done" | "burnt";
 
 export type StationState = StationSpec & {
@@ -73,6 +92,7 @@ export type ServiceState = {
   plannerUsage?: Usage;
   platingUsage?: Usage;
   bill: Usage;
+  events: KitchenEvent[];
   error?: string;
   createdAt: number;
   updatedAt: number;

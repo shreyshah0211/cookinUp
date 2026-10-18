@@ -202,6 +202,25 @@ export const BUBBLES: Record<string, Rows> = {
   pen: BUBBLE_BOX(["FFFFFFFFF", "FFFFFFKKF", "FFFFFKKKF", "FFFFKKKFF", "FFFKKKFFF", "FFKKKFFFF", "FKKFFFFFF", "FFFFFFFFF"]),
   zzz: BUBBLE_BOX(["FFFFFFFFF", "FFFFFKKKF", "FFFFFFKFF", "FFFFFKKKF", "FKKKFFFFF", "FFKFFFFFF", "FKKKFFFFF", "FFFFFFFFF"]),
 };
+/** A thought cloud, 15x13 with two trailing puffs; the dots are drawn live so they can move. */
+export const THOUGHT: Rows = [
+  "___BBBBBBBBB___",
+  "__BFFFFFFFFFB__",
+  "_BFFFFFFFFFFFB_",
+  "BFFFFFFFFFFFFFB",
+  "BFFFFFFFFFFFFFB",
+  "BFFFFFFFFFFFFFB",
+  "_BFFFFFFFFFFFB_",
+  "__BFFFFFFFFFB__",
+  "___BBBBBBBBB___",
+  "____BBB________",
+  "____BFB________",
+  "____BBB________",
+  "______B________",
+];
+export const THOUGHT_W = 15;
+export const THOUGHT_H = 13;
+
 export const BUBBLE_PALETTE: Palette = { _: "", B: "#2b2520", F: "#fffdf5", K: "#2b2520", G: "#2a9d8f", R: "#e76f51", Y: "#e9c46a", W: "#ffffff" };
 
 export function shade(hex: string, amount: number): string {
@@ -282,6 +301,18 @@ const GLYPHS: Record<string, string[]> = {
   "!": ["010", "010", "010", "000", "010"],
   "?": ["110", "001", "010", "000", "010"],
   ".": ["000", "000", "000", "000", "010"],
+  ",": ["000", "000", "000", "010", "100"],
+  ":": ["000", "010", "000", "010", "000"],
+  "'": ["010", "010", "000", "000", "000"],
+  '"': ["101", "101", "000", "000", "000"],
+  "…": ["000", "000", "000", "000", "101"],
+  "-": ["000", "000", "111", "000", "000"],
+  "&": ["010", "101", "010", "101", "011"],
+  "(": ["001", "010", "010", "010", "001"],
+  ")": ["100", "010", "010", "010", "100"],
+  "%": ["101", "001", "010", "100", "101"],
+  "+": ["000", "010", "111", "010", "000"],
+  "=": ["000", "111", "000", "111", "000"],
 };
 
 export const FONT_H = 5;
@@ -290,18 +321,29 @@ export const textWidth = (text: string) => text.length * 4 - 1;
 /** Draws `text` in the pixel font at native resolution; unknown characters become a dot. */
 export function drawText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string) {
   ctx.fillStyle = color;
-  [...text.toUpperCase()].forEach((ch, i) => {
-    const g = GLYPHS[ch] ?? GLYPHS["."];
+  // Typographic quotes and dashes come back from the models; the font has the plain ones.
+  const plain = text.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-");
+  [...plain.toUpperCase()].forEach((ch, i) => {
+    const g = GLYPHS[ch] ?? GLYPHS[" "];
     g.forEach((row, gy) => {
       for (let gx = 0; gx < 3; gx++) if (row[gx] === "1") ctx.fillRect(x + i * 4 + gx, y + gy, 1, 1);
     });
   });
 }
 
+/** The box a label will take, tail included, for keeping bubbles apart. */
+export function labelBox(text: string, tipX: number, tipY: number) {
+  const lines = text.split("\n");
+  const w = Math.max(...lines.map(textWidth)) + 6;
+  const h = lines.length * (FONT_H + 2) - 2 + 6;
+  return { x: Math.round(tipX - w / 2) - 1, y: tipY - h - 4, w: w + 2, h: h + 5 };
+}
+
 /** A pixel label bubble with a tail at the bottom centre, anchored by the tail's tip. */
 export function drawLabel(ctx: CanvasRenderingContext2D, text: string, tipX: number, tipY: number) {
-  const w = textWidth(text) + 6;
-  const h = FONT_H + 6;
+  const lines = text.split("\n");
+  const w = Math.max(...lines.map(textWidth)) + 6;
+  const h = lines.length * (FONT_H + 2) - 2 + 6;
   const x = Math.round(tipX - w / 2);
   const y = tipY - h - 3;
   ctx.fillStyle = "#2b2520";
@@ -314,7 +356,7 @@ export function drawLabel(ctx: CanvasRenderingContext2D, text: string, tipX: num
   ctx.fillRect(x, y, w, h);
   ctx.fillRect(Math.round(tipX) - 1, y + h, 3, 1);
   ctx.fillRect(Math.round(tipX), y + h + 1, 1, 1);
-  drawText(ctx, text, x + 3, y + 3, "#2b2520");
+  lines.forEach((line, i) => drawText(ctx, line, x + 3, y + 3 + i * (FONT_H + 2), "#2b2520"));
 }
 
 // Plants, 16x20: outline `k`, three leaf shades, pot with rim, soil.

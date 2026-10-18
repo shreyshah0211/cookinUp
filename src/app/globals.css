@@ -77,7 +77,110 @@ body {
 .tinput:focus { border-color: var(--amber); }
 .tinput::placeholder { color: var(--ink-muted); }
 
-/* Chat: thinking dots, progress shimmer, and markdown in replies. */
+/* In-game windows: paper panels with a thick ink border and a pixel-font
+   title bar. Inside one, the theme tokens flip to paper, so the same
+   utilities and controls read right on it. */
+.pix-win {
+  --background: #fffdf5;
+  --foreground: #2b2520;
+  --paper: #f3ead8;
+  --line: #cdbf9f;
+  --ink-muted: #7a6f63;
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  color: var(--foreground);
+  border: 3px solid #2b2520;
+  box-shadow: 0 0 0 2px #fffdf5, 6px 8px 0 rgba(0, 0, 0, 0.5);
+  max-height: calc(100vh - 24px);
+  max-width: calc(100vw - 24px);
+}
+.pix-title {
+  font-family: var(--font-pixel), monospace;
+  font-size: 10px;
+  line-height: 1;
+  background: #2b2520;
+  color: #fffdf5;
+  padding: 9px 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  user-select: none;
+  cursor: grab;
+  touch-action: none;
+}
+.pix-title:active { cursor: grabbing; }
+.pix-title .x { margin-left: auto; background: transparent; border: 0; color: #fffdf5; font: inherit; padding: 2px 4px; cursor: pointer; }
+.pix-title .x:hover { color: #f4a261; }
+.pix-body { padding: 12px 14px; overflow: auto; font-size: 13px; min-height: 0; }
+.pix-win .md strong { color: #000; }
+.pix-win .md em { color: inherit; }
+.pix-win .md code { background: #efe6d2; }
+.pix-win .md pre { background: #f3ead8; border-color: var(--line); }
+.pix-win .md th { background: #efe6d2; }
+.pix-win .md blockquote { color: #4a4238; }
+.pix-win .md tr:nth-child(even) td { background: rgba(0, 0, 0, 0.03); }
+.pix-win .tbtn:hover:not(:disabled) { background: #efe6d2; }
+
+.pix-btn {
+  font-family: var(--font-pixel), monospace;
+  font-size: 9px;
+  line-height: 1;
+  border: 2px solid #2b2520;
+  box-shadow: 2px 2px 0 #2b2520;
+  background: #f4a261;
+  color: #2b2520;
+  padding: 7px 9px 6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pix-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.pix-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }
+.pix-btn:disabled { opacity: 0.45; cursor: default; }
+.pix-btn-plain { background: #fffdf5; }
+.pix-btn-danger { background: #e76f51; color: #fffdf5; }
+.pix-tag {
+  display: inline-block;
+  font-family: var(--font-pixel), monospace;
+  font-size: 7px;
+  line-height: 1;
+  padding: 4px 5px 3px;
+  background: #2b2520;
+  color: #fffdf5;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The HUD over the kitchen. */
+.hud { position: fixed; z-index: 20; display: flex; align-items: center; gap: 8px; }
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 40vw;
+  font-size: 12px;
+  color: #fffdf5;
+  background: rgba(43, 37, 32, 0.85);
+  border: 2px solid #2b2520;
+  padding: 5px 9px;
+}
+.hud-hint { font-family: var(--font-pixel), monospace; font-size: 7px; color: rgba(255, 253, 245, 0.55); white-space: nowrap; text-transform: uppercase; }
+
+/* Tickets on the order window: the order you wrote, and notes to a chef. */
+.ticket {
+  background: #fff9e8;
+  border: 2px dashed #cdbf9f;
+  padding: 8px 10px;
+  position: relative;
+}
+.ticket-note { background: #fdf1e3; }
+.plate { background: #fffdf5; border: 2px solid #2b2520; box-shadow: 3px 3px 0 #cdbf9f; padding: 10px 14px; }
+
+/* Thinking dots, progress shimmer, and markdown in plated answers. */
 @keyframes dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
 .dot { animation: dot 1.2s ease-in-out infinite; }
 @keyframes shimmer { 0% { background-position: -80px 0; } 100% { background-position: 160px 0; } }

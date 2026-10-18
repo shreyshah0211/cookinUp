@@ -3,10 +3,12 @@
 // re-fires a station and its descendants on request, and tells listeners
 // about every change.
 
-import { merge, plan, rebalance, runStation } from "./engine";
+import { answerColleague, merge, plan, rebalance, runStation } from "./engine";
 import { modelInfo } from "./models";
 import { hireable, type Keys } from "./providers";
-import type { ServiceState, StationOutput, StationState, Turn, Usage } from "./schemas";
+import type { KitchenEvent, ServiceState, StationOutput, StationState, Turn, Usage } from "./schemas";
+
+const clip = (s: string, n = 140) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
 
 export type RerunOptions = { instruction?: string; model?: string; token_budget?: number };
 
@@ -39,6 +41,7 @@ export class KitchenService {
       totalBudget: args.totalBudget,
       stations: [],
       bill: zeroUsage(),
+      events: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -67,6 +70,23 @@ export class KitchenService {
     return bill;
   }
 
+  private nextEventId = 1;
+  /** Something for the bubbles: pushed, capped, and sent out at once. */
+  private event(e: Omit<KitchenEvent, "id" | "at">) {
+    let events = this.state.events;
+    if (e.kind === "tool" && e.done) {
+      // The call finished: it updates the line that said it started.
+      const i = events.findLastIndex((x) => x.kind === "tool" && !x.done && x.from === e.from && x.tool === e.tool && (e.tool === "web_search" || x.text === e.text));
+      if (i >= 0) events = events.filter((_, j) => j !== i);
+    }
+    events = [...events, { ...e, id: this.nextEventId++, at: Date.now() }].slice(-200);
+    this.state = { ...this.state, events };
+    this.emit();
+  }
+  private titleOf(id: string) {
+    return id === "head" ? "Head chef" : id === "expo" ? "Expediter" : (this.station(id)?.title ?? id);
+  }
+
   private station(id: string): StationState | undefined {
     return this.state.stations.find((s) => s.id === id);
   }
@@ -91,14 +111,13 @@ export class KitchenService {
       if (!this.state.hireable.includes(this.state.headChef)) {
         throw new Error(`No key for the head chef (${modelInfo(this.state.headChef).label}): pick another or add the key.`);
       }
-      // The head chef hires at or below their own rate; promote any chef by hand afterwards.
-      const rate = modelInfo(this.state.headChef).outputPerM;
-      const onShift = this.state.hireable.filter((m) => modelInfo(m).outputPerM <= rate);
+      this.event({ kind: "think", from: "head", text: "Reading the ticket", detail: this.state.task });
+      // The head chef picks a chef for every station from everyone there is a key for.
       const { object: menu, usage } = await plan({
         task: this.state.task,
         headChef: this.state.headChef,
         totalBudget: this.state.totalBudget,
-        models: onShift.length > 0 ? onShift : this.state.hireable,
+        models: this.state.hireable,
         context: this.context,
         keys: this.keys,
       });
@@ -108,11 +127,11 @@ export class KitchenService {
         plannerUsage: usage,
         stations: menu.stations.map((s) => ({ ...s, status: "idle", notes: [], history: [] })),
       };
-      this.emit();
+      this.event({ kind: "say", from: "head", text: `Menu's up: ${menu.stations.length} station${menu.stations.length === 1 ? "" : "s"}. Fire!`, detail: menu.stations.map((s) => `${s.title} → ${modelInfo(s.model).label}: ${s.goal}`).join("\n") });
       this.tick();
     } catch (error) {
       this.state = { ...this.state, status: "failed", error: String(error instanceof Error ? error.message : error) };
-      this.emit();
+      this.event({ kind: "say", from: "head", text: `Can't cook this: ${clip(this.state.error ?? "", 80)}` });
     }
     return this.whenServed();
   }
@@ -151,7 +170,8 @@ export class KitchenService {
     for (const d of [id, ...this.descendants(id)]) this.invalidate(d);
     this.invalidatePlating();
     this.state = { ...this.state, status: "cooking", error: undefined };
-    this.emit();
+    const why = opts.instruction ? clip(opts.instruction, 80) : opts.model ? `${modelInfo(opts.model).label} takes over` : "again, please";
+    this.event({ kind: "say", from: "head", to: id, text: `Re-fire ${st.title}: ${why}`, detail: opts.instruction });
     this.tick();
   }
 
@@ -255,6 +275,9 @@ export class KitchenService {
       history: [...s.history, { instruction, at: startedAt }],
     }));
     const upstream = st.depends_on.map((d) => this.station(d)?.output).filter((o): o is StationOutput => !!o);
+    // The hand-off: each upstream chef passes their work over, and the cook reads the ticket.
+    for (const u of upstream) this.event({ kind: "say", from: u.station_id, to: id, text: `Here you go: ${clip(u.summary, 90)}`, detail: u.summary });
+    this.event({ kind: "think", from: id, text: st.notes.length ? `On it: ${clip(st.notes.at(-1)!, 80)}` : `Reading the ticket: ${clip(st.goal, 80)}`, detail: [st.goal, ...st.notes.map((n) => `Note: ${n}`)].join("\n") });
     void runStation({
       task: this.state.task,
       station: st,
@@ -263,6 +286,22 @@ export class KitchenService {
       context: this.context,
       keys: this.keys,
       signal: abort.signal,
+      hook: {
+        onTool: (e) => {
+          if (this.runs.get(id) !== run) return;
+          if (e.tool === "ask_chef" && e.to) {
+            // A question across the kitchen, and the answer back.
+            if (!e.done) this.event({ kind: "say", from: id, to: e.to, text: clip(e.text, 90), detail: e.text });
+            else this.event({ kind: "say", from: e.to, to: id, text: clip(e.detail ?? "", 90), detail: e.detail });
+          }
+          this.event({ kind: "tool", from: id, to: e.to, tool: e.tool, text: e.text, detail: e.detail, done: e.done });
+        },
+        askChef: async (stationId, question) => {
+          const other = this.station(stationId);
+          if (!other?.output) throw new Error(`${this.titleOf(stationId)} has nothing to share yet.`);
+          return answerColleague({ station: other, output: other.output, from: st.title, question, keys: this.keys, signal: abort.signal });
+        },
+      },
     })
       .then(({ object, usage }) => {
         if (this.runs.get(id) !== run) return;
@@ -274,6 +313,7 @@ export class KitchenService {
           finishedAt: Date.now(),
           history: s.history.map((h, i) => (i === s.history.length - 1 ? { ...h, output: object } : h)),
         }));
+        this.event({ kind: "say", from: id, to: "expo", text: `Done! ${clip(object.summary, 90)}`, detail: object.summary });
         this.tick();
       })
       .catch((error: unknown) => {
@@ -286,6 +326,7 @@ export class KitchenService {
           finishedAt: Date.now(),
           history: s.history.map((h, i) => (i === s.history.length - 1 ? { ...h, error: message } : h)),
         }));
+        this.event({ kind: "say", from: id, to: "head", text: `Burnt it: ${clip(message, 80)}`, detail: message });
         this.tick();
       });
   }
@@ -295,9 +336,9 @@ export class KitchenService {
     const abort = new AbortController();
     this.platingAbort = abort;
     this.state = { ...this.state, status: "plating" };
-    this.emit();
     const outputs = this.state.stations.map((s) => s.output).filter((o): o is StationOutput => !!o);
     const burnt = this.state.stations.filter((s) => s.status === "burnt");
+    this.event({ kind: "think", from: "expo", text: `Plating ${outputs.length} dish${outputs.length === 1 ? "" : "es"}`, detail: outputs.map((o) => `${this.titleOf(o.station_id)}: ${o.summary}`).join("\n") });
     try {
       if (outputs.length === 0) throw new Error("Every station burnt; nothing to plate.");
       const { object, usage } = await merge({
@@ -313,11 +354,12 @@ export class KitchenService {
       });
       if (this.platingRun !== run) return;
       this.state = { ...this.state, status: "served", plating: object, platingUsage: addUsage(this.state.platingUsage, usage) };
+      this.event({ kind: "say", from: "expo", text: "Order up!", detail: object.conflicts.length ? `${object.conflicts.length} note(s) for the head chef` : undefined });
     } catch (error) {
       if (this.platingRun !== run) return;
       this.state = { ...this.state, status: "failed", error: error instanceof Error ? error.message : String(error) };
+      this.event({ kind: "say", from: "expo", to: "head", text: `Fire at the pass: ${clip(this.state.error ?? "", 80)}` });
     }
-    this.emit();
   }
 }
 

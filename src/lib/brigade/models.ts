@@ -27,6 +27,14 @@ export const DEFAULT_MODEL = "claude-haiku-4-5";
 export const DEFAULT_HEAD_CHEF = "claude-haiku-4-5";
 export const DEFAULT_BUDGET = 4000;
 
+/** Chef level by what the model costs to run: 1 commis, 2 sous chef, 3 chef de cuisine. Shows in the hat, the counter and the card. */
+export type Tier = 1 | 2 | 3;
+export const TIER_NAMES: Record<Tier, string> = { 1: "Commis", 2: "Sous chef", 3: "Chef de cuisine" };
+export function tierOf(id: string): Tier {
+  const m = modelInfo(id);
+  return m.outputPerM <= 5 ? 1 : m.outputPerM <= 10 ? 2 : 3;
+}
+
 export function modelInfo(id: string): ModelInfo {
   return MODELS.find((m) => m.id === id) ?? MODELS.find((m) => m.id === DEFAULT_MODEL)!;
 }

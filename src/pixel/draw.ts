@@ -515,3 +515,71 @@ export function tokenMeter(ctx: Ctx, x: number, y: number, used: number, budget:
     R(ctx, x + Math.max(0, px), y, Math.min(6, w - Math.max(0, px), px + 6), 2, "#f4a261");
   }
 }
+
+/** A small star, 5 wide and 4 tall. */
+function star(ctx: Ctx, x: number, y: number, c = "#f2c14e") {
+  R(ctx, x + 2, y, 1, 1, c);
+  R(ctx, x, y + 1, 5, 1, c);
+  R(ctx, x + 1, y + 2, 3, 1, c);
+  R(ctx, x + 1, y + 3, 1, 1, c);
+  R(ctx, x + 3, y + 3, 1, 1, c);
+}
+
+/**
+ * Chef level on the workspace, so model strength reads at a glance: a plaque
+ * of one to three stars beside the token meter, and for the senior levels a
+ * copper or gold band along the counter front (and gold on the top edge).
+ */
+export function tierTrim(ctx: Ctx, x: number, y: number, tier: 1 | 2 | 3) {
+  const metal = tier === 3 ? "#e2b53e" : tier === 2 ? "#c0783a" : "#8a8f99";
+  const shine = tier === 3 ? "#fff1b0" : tier === 2 ? "#e8a56a" : "#c9ced8";
+  if (tier >= 2) {
+    R(ctx, x, y + 14, 48, 2, metal);
+    R(ctx, x, y + 14, 48, 1, shine);
+  }
+  if (tier === 3) R(ctx, x, y, 48, 1, metal);
+  // the plaque, right of the meter (which runs x+9..x+39 at y-5)
+  const w = tier * 6 + 1;
+  const px = x + 41;
+  const py = y - 9;
+  R(ctx, px - 1, py - 1, w + 2, 8, C.outline);
+  R(ctx, px, py, w, 6, tier === 1 ? "#3d4356" : tier === 2 ? "#6b3d1f" : "#7a5410");
+  for (let i = 0; i < tier; i++) star(ctx, px + 1 + i * 6, py + 1, tier === 1 ? "#c9ced8" : shine);
+}
+
+/** An open cookbook on the counter: red cover, cream pages, lines of text; frame 1 lifts a page. */
+export function cookbook(ctx: Ctx, x: number, y: number, frame: number) {
+  R(ctx, x, y, 14, 9, C.outline);
+  R(ctx, x + 1, y + 1, 12, 7, "#9b3b2e");
+  R(ctx, x + 2, y + 1, 5, 6, "#fff7e0");
+  R(ctx, x + 7, y + 1, 5, 6, "#fff7e0");
+  R(ctx, x + 7, y + 1, 1, 7, "#d8c7a3");
+  for (const ly of [2, 4]) {
+    R(ctx, x + 3, y + ly, 3, 1, "#7a6f63");
+    R(ctx, x + 8, y + ly, 3, 1, "#7a6f63");
+  }
+  R(ctx, x + 3, y + 6, 2, 1, "#c0453a");
+  if (frame % 2 === 1) {
+    // a page mid-flip
+    R(ctx, x + 6, y, 1, 1, C.outline);
+    R(ctx, x + 5, y - 1, 1, 1, C.outline);
+    R(ctx, x + 6, y + 1, 1, 4, "#fff7e0");
+    R(ctx, x + 5, y, 1, 5, "#fff7e0");
+  }
+  shadowUnder(ctx, x, y + 9, 14);
+}
+
+/** A dotted line between two chefs while one talks to the other. */
+export function chatter(ctx: Ctx, x0: number, y0: number, x1: number, y1: number, t: number) {
+  const d = Math.hypot(x1 - x0, y1 - y0);
+  if (d < 8) return;
+  const n = Math.floor(d / 5);
+  const phase = Math.floor(t * 6) % 3;
+  for (let i = 1; i < n; i++) {
+    if ((i + phase) % 3 !== 0) continue;
+    const px = Math.round(x0 + ((x1 - x0) * i) / n);
+    const py = Math.round(y0 + ((y1 - y0) * i) / n);
+    R(ctx, px - 1, py - 1, 3, 3, C.outline);
+    R(ctx, px, py, 1, 1, "#fffdf5");
+  }
+}

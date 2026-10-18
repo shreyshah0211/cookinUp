@@ -3,12 +3,33 @@
 // pass and bubble when stuck, updated from the service state and drawn at
 // native pixel resolution.
 
-import { modelInfo } from "@/lib/brigade/models";
-import type { ServiceState, StationState } from "@/lib/brigade/schemas";
+import { modelInfo, tierOf } from "@/lib/brigade/models";
+import type { KitchenEvent, ServiceState, StationState } from "@/lib/brigade/schemas";
 
 import * as D from "./draw";
 import { ding } from "./sound";
-import { BUBBLES, BUBBLE_PALETTE, CHEF_FRAMES, CHEF_H, DISH_W, SENIOR_LOOK, TILE, chefPalette, dishFor, dishSprite, drawLabel, lookFor, sprite, type Look } from "./sprites";
+import { BUBBLES, BUBBLE_PALETTE, CHEF_FRAMES, CHEF_H, DISH_W, SENIOR_LOOK, THOUGHT, THOUGHT_H, THOUGHT_W, TILE, chefPalette, dishFor, dishSprite, drawLabel, labelBox, lookFor, sprite, type Look } from "./sprites";
+
+/** How long a said thing floats over a chef's head, and how long a closed cookbook stays out. */
+const SAY_FOR = 6000;
+const BOOK_LINGER = 2500;
+/** The pixel font is uppercase and narrow: two short lines per bubble, the rest in the chef's card. */
+function clipWords(s: string, perLine = 24, lines = 2): string {
+  const words = s.split(/\s+/);
+  const out: string[] = [];
+  let line = "";
+  for (const w of words) {
+    if ((line + " " + w).trim().length > perLine) {
+      if (line) out.push(line);
+      line = w;
+      if (out.length === lines) break;
+    } else line = (line + " " + w).trim();
+  }
+  if (out.length < lines && line) out.push(line);
+  const used = out.join(" ").length;
+  if (used < s.trim().length) out[out.length - 1] = out[out.length - 1].slice(0, perLine - 1).trimEnd() + "…";
+  return out.slice(0, lines).join("\n");
+}
 import { WALL_ROWS, buildLayout, findPath, key, type Layout, type Tile } from "./world";
 
 type Facing = "down" | "up" | "left" | "right";
@@ -57,8 +78,12 @@ export class KitchenWorld {
   private t = 0;
   private doorOpenUntil = 0;
   private servedAt = -100;
-  /** The last few things that happened, for debugging (`__kitchen.events`). */
-  events: string[] = [];
+  /** Kitchen talk from the service: who said or did what, for bubbles. */
+  private talk: KitchenEvent[] = [];
+  /** Where each thought bubble was drawn this frame, so a click can land on it. */
+  private thoughtRects = new Map<string, { x: number; y: number; w: number; h: number }>();
+  /** The last few things that happened, for debugging (`__kitchen.log`). */
+  log: string[] = [];
   hovered: string | null = null;
   picked: string | null = null;
 
@@ -87,6 +112,7 @@ export class KitchenWorld {
 
   /** One word for what someone is doing, for the hover label. */
   statusWord(id: string): string {
+    if (id.startsWith("thought:")) return "Thinking";
     if (id === "head") return this.status === "planning" ? "Planning" : this.status === "served" ? "Done" : this.status ? "Watching" : "Idle";
     if (id === "expo") return this.status === "plating" ? "Plating" : this.status === "served" ? "Served" : this.status === "failed" ? "Fire" : "Waiting";
     const e = this.chefs.get(id);
@@ -94,6 +120,9 @@ export class KitchenWorld {
     if (!e || !s) return "Idle";
     if (e.carrying) return "Serving";
     if (e.path.length > 0) return "Walking";
+    const tool = this.activeTool(id);
+    if (tool === "web_search") return "Reading";
+    if (tool === "ask_chef") return "Asking";
     switch (s.status) {
       case "cooking":
         return e.work === "board" ? "Chopping" : "Cooking";
@@ -127,8 +156,38 @@ export class KitchenWorld {
   }
 
   private note(what: string) {
-    this.events.push(`${this.t.toFixed(1)} ${what}`);
-    if (this.events.length > 60) this.events.shift();
+    this.log.push(`${this.t.toFixed(1)} ${what}`);
+    if (this.log.length > 60) this.log.shift();
+  }
+
+  /** The latest thing someone said, while it still floats. */
+  private saying(id: string): KitchenEvent | undefined {
+    const now = Date.now();
+    for (let i = this.talk.length - 1; i >= 0; i--) {
+      const e = this.talk[i];
+      if (e.from === id && e.kind === "say") return now - e.at < SAY_FOR ? e : undefined;
+    }
+    return undefined;
+  }
+
+  /** A tool a station is using right now (or just finished): the cookbook stays out a moment. */
+  private activeTool(id: string): KitchenEvent["tool"] | null {
+    const now = Date.now();
+    for (let i = this.talk.length - 1; i >= 0; i--) {
+      const e = this.talk[i];
+      if (e.from !== id || e.kind !== "tool") continue;
+      if (!e.done) return now - e.at < 90_000 ? (e.tool ?? null) : null;
+      return now - e.at < BOOK_LINGER ? (e.tool ?? null) : null;
+    }
+    return null;
+  }
+
+  /** Someone is working something out: a thought cloud you can open. */
+  private thinking(e: Entity): boolean {
+    if (e.id === "head") return this.status === "planning";
+    if (e.id === "expo") return this.status === "plating";
+    const s = this.stations.find((x) => x.id === e.id);
+    return s?.status === "cooking" && !e.carrying;
   }
 
   private relayout(cols: number, rows: number) {
@@ -224,6 +283,7 @@ export class KitchenWorld {
     }
     this.status = state?.status ?? null;
     this.stations = state?.stations ?? [];
+    this.talk = state?.events ?? [];
     if (state) {
       this.head.hat = modelInfo(state.headChef).hat;
       this.expo.hat = this.head.hat;
@@ -367,18 +427,20 @@ export class KitchenWorld {
     return "idle";
   }
 
-  /** Speech bubbles are for moments that need you; the station light carries the status. */
+  /** Icon bubbles are for moments that need you; the station light carries the status. */
   private bubbleOf(e: Entity, mode: Mode): keyof typeof BUBBLES | null {
-    if (e.id === "head") return this.status === "planning" ? "pen" : null;
     if (e.id === "expo") return this.status === "failed" ? "alert" : null;
     if (e.carrying) return null;
     if (mode === "burnt") return "alert";
     return null;
   }
 
-  /** What is under a point in native pixels: a station (by counter or chef), "head" or "expo". */
+  /** What is under a point in native pixels: a thought bubble ("thought:<id>"), a station (by counter or chef), "head" or "expo". */
   hitTest(px: number, py: number): string | null {
     const L = this.layout;
+    for (const [id, r] of this.thoughtRects) {
+      if (px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h) return `thought:${id}`;
+    }
     for (const e of [...this.chefs.values(), this.head, this.expo]) {
       if (px >= e.x && px < e.x + TILE && py >= e.y - 8 && py < e.y + TILE) return e.id;
     }
@@ -458,7 +520,10 @@ export class KitchenWorld {
       D.counter(ctx, x + TILE, y);
       D.board(ctx, x + 2 * TILE, y, s ? s.token_budget / maxBudget : 0);
       if (cooking || s?.status === "burnt") D.pot(ctx, x + 4, y + 1);
+      if (s) D.tierTrim(ctx, x, y, tierOf(s.model));
       if (s) D.tokenMeter(ctx, x + 9, y - 5, s.usage?.outputTokens ?? 0, s.token_budget, cooking, t);
+      // the cookbook comes out on the counter while the chef looks something up
+      if (id && this.activeTool(id) === "web_search") D.cookbook(ctx, x + TILE + 1, y - 2, Math.floor(t * 3));
       // the station beacon, standing on the floor just right of the counter
       D.beacon(ctx, x + 3 * TILE + 4, y + 1, s?.status ?? "idle", t + spot.index);
       if (id && (id === this.picked || id === this.hovered)) {
@@ -509,18 +574,66 @@ export class KitchenWorld {
     D.passGantry(ctx, L.pass.x0 * TILE, (L.pass.x1 + 1) * TILE, railY, L.pass.y * TILE);
     for (let x = L.pass.x0 + 1; x + 1 <= L.pass.x1; x += 4) D.heatLamp(ctx, x * TILE, railY, L.pass.y * TILE, lampsOn, t + x);
 
-    // bubbles, then the one-word label over whoever is hovered
+    // kitchen talk: a dotted line to whoever is being spoken to, then the words;
+    // thought clouds over anyone working something out; icon bubbles; the hover label
+    this.thoughtRects.clear();
+    const headOf = (e: Entity) => ({ x: Math.round(e.x) + TILE / 2, y: Math.round(e.y) - (CHEF_H - TILE) - 2 });
+    const byId = (id: string) => (id === "head" ? this.head : id === "expo" ? this.expo : this.chefs.get(id));
     for (const e of all) {
+      const said = this.saying(e.id);
+      if (!said?.to) continue;
+      const other = byId(said.to);
+      if (!other) continue;
+      const a = headOf(e);
+      const b = headOf(other);
+      D.chatter(ctx, a.x, a.y + 6, b.x, b.y + 6, t);
+    }
+    // Speech bubbles stack upward instead of covering each other.
+    const taken: { x: number; y: number; w: number; h: number }[] = [];
+    const overlaps = (a: { x: number; y: number; w: number; h: number }) => taken.some((b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h);
+    for (const e of [...all].sort((a, b) => b.y - a.y)) {
+      const said = this.saying(e.id);
+      const h = headOf(e);
+      if (said) {
+        const text = clipWords(said.text);
+        let tipY = h.y;
+        let box = labelBox(text, h.x, tipY);
+        for (let i = 0; i < 6 && overlaps(box); i++) {
+          tipY -= box.h - 3;
+          box = labelBox(text, h.x, tipY);
+        }
+        taken.push(box);
+        drawLabel(ctx, text, h.x, tipY);
+        continue;
+      }
+      if (this.thinking(e)) {
+        const img = sprite(THOUGHT, BUBBLE_PALETTE);
+        const bx = h.x - 3;
+        const by = h.y - THOUGHT_H - 1;
+        ctx.drawImage(img, bx, by);
+        // three dots, the active one lifted
+        const beat = Math.floor(t * 3) % 3;
+        ctx.fillStyle = "#2b2520";
+        for (let i = 0; i < 3; i++) ctx.fillRect(bx + 4 + i * 3, by + 4 - (beat === i ? 1 : 0), 1, 1);
+        const hot = this.hovered === `thought:${e.id}`;
+        if (hot) {
+          ctx.strokeStyle = "#ffffff";
+          ctx.strokeRect(bx - 0.5, by - 0.5, THOUGHT_W + 1, 9 + 1);
+        }
+        this.thoughtRects.set(e.id, { x: bx, y: by, w: THOUGHT_W, h: THOUGHT_H });
+        continue;
+      }
       const kind = this.bubbleOf(e, this.modeOf(e));
       if (!kind) continue;
       const img = sprite(BUBBLES[kind], BUBBLE_PALETTE);
       ctx.drawImage(img, Math.round(e.x) + 4, Math.round(e.y) - 8 - CHEF_H + 10 - img.height + 2);
     }
-    const target = this.hovered ? all.find((e) => e.id === this.hovered) : undefined;
+    const hoveredId = this.hovered?.startsWith("thought:") ? this.hovered.slice(8) : this.hovered;
+    const target = hoveredId ? all.find((e) => e.id === hoveredId) : undefined;
     if (target) {
-      const hasBubble = !!this.bubbleOf(target, this.modeOf(target));
-      const headY = Math.round(target.y) - (CHEF_H - TILE) - 2 - (hasBubble ? 14 : 0);
-      drawLabel(ctx, this.statusWord(target.id), Math.round(target.x) + TILE / 2, headY);
+      const h = headOf(target);
+      const busy = this.saying(target.id) ? 12 : this.thinking(target) ? THOUGHT_H + 2 : this.bubbleOf(target, this.modeOf(target)) ? 14 : 0;
+      drawLabel(ctx, this.statusWord(this.hovered!), h.x, h.y - busy);
     }
   }
 

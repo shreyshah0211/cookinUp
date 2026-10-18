@@ -1,3 +1,4 @@
+import { modelInfo, TIER_NAMES, tierOf } from "./models";
 import type { StationOutput, StationSpec, Turn } from "./schemas";
 
 /** Earlier orders in this chat, oldest first, so a follow-up ("make it shorter", "now do the same for X") lands on the right thing. */
@@ -14,8 +15,14 @@ export function conversationBlock(context: Turn[]): string[] {
 export function headChefPrompt(task: string, models: string[], totalBudget: number, context: Turn[] = []): string {
   return [
     "You are the head chef of a kitchen of AI agents. Break the user's task into 2-6 subtasks (stations) that are as independent as possible so they can run in parallel.",
-    "For each station give: an id (short snake_case), a title, a goal, the ids it depends on (only when it truly needs their output), a model, and a token budget (max output tokens).",
-    `Allowed models: ${models.join(", ")}. Stations run live in front of the user, so prefer fast, cheap models (sonnet, haiku, mini) and reserve the largest model for at most one station that needs hard reasoning or synthesis.`,
+    "For each station give: an id (short snake_case), a title, a goal, the ids it depends on (only when it truly needs their output), a model, a token budget (max output tokens), and tools.",
+    "tools: [\"web\"] only for a station that needs facts from the live internet (news, prices, docs, recent events); [] for everything else. Most stations need no tools.",
+    "Hire a chef (model) for each station yourself, matched to how hard that station is. The chefs you can hire, with their level and price per million tokens (in / out):",
+    ...models.map((m) => {
+      const info = modelInfo(m);
+      return `- ${m}: ${TIER_NAMES[tierOf(m)]} (${"★".repeat(tierOf(m))}), $${info.inputPerM} / $${info.outputPerM}`;
+    }),
+    "Commis (★) for simple, short or mechanical work: lookups, lists, formatting, short copy. Sous chef (★★) for real writing, analysis or code. Chef de cuisine (★★★) only for a station that needs deep reasoning, hard code or careful synthesis, and at most one per menu. Stations run live in front of the user, so when in doubt pick the cheaper, faster chef.",
     `The token budgets must add up to at most ${totalBudget}. Give more to stations that produce long output.`,
     "Dependencies must form a DAG. Every depends_on id must be a station in this menu.",
     "Station goals must be self-contained: when the task refers to an earlier answer, restate in each goal what it needs from it (the chefs see the conversation too, but spell it out).",
@@ -31,8 +38,9 @@ export function lineCookPrompt(args: {
   upstream: StationOutput[];
   notes: string[];
   context?: Turn[];
+  research?: string;
 }): string {
-  const { task, station, upstream, notes, context = [] } = args;
+  const { task, station, upstream, notes, context = [], research } = args;
   const inputs =
     upstream.length === 0
       ? "(none - you are a first-course station)"
@@ -52,8 +60,26 @@ export function lineCookPrompt(args: {
     "## Head chef's notes",
     notes.length ? notes.map((n, i) => `${i + 1}. ${n}`).join("\n") : "(none)",
     "",
+    ...(research ? ["## Your research notes", research, ""] : []),
     `Produce the deliverable for your station. station_id is "${station.id}". Write \`result\` in clean Markdown (headings, lists, tables where they fit; no code block around prose). Write a two-sentence summary for downstream chefs and list the assumptions you made.`,
   ].join("\n");
+}
+
+/** Before cooking: look things up and ask upstream chefs, then write notes for yourself. */
+export function researchPrompt(args: { task: string; station: StationSpec; upstream: StationOutput[]; canSearch: boolean; canAsk: boolean }): string {
+  const { task, station, upstream, canSearch, canAsk } = args;
+  return [
+    `You are the chef at the "${station.title}" station in a kitchen of AI agents. Overall task: ${task}`,
+    `Your goal: ${station.goal}`,
+    "",
+    "Before cooking, gather what you need:",
+    canSearch ? "- Use web_search for facts you need from the live internet (at most two searches). Note the source URLs." : "",
+    canAsk ? `- Use ask_chef to ask an upstream station a short, specific question about their work when something is unclear. Upstream stations: ${upstream.map((u) => u.station_id).join(", ")}.` : "",
+    "",
+    "Then reply with concise research notes (facts, figures, sources with URLs, answers you got). Do not write the deliverable yet. If you need nothing, reply 'No research needed.'",
+  ]
+    .filter((l) => l !== "")
+    .join("\n");
 }
 
 export function expediterPrompt(task: string, outputs: StationOutput[], burnt: StationSpec[], context: Turn[] = []): string {

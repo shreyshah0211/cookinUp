@@ -1,7 +1,9 @@
 "use client";
 
-// The kitchen canvas: sized to fill its pane (the room grows to fit), scaled
-// crisp, with a game loop, hit testing, and a one-word label on hover.
+// The kitchen canvas: sized to fill the window (the room grows to fit),
+// scaled crisp, with a game loop, hit testing, and a one-word label on hover.
+// A click reports what was hit and where on the screen, so a window can open
+// right there.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -24,12 +26,12 @@ function fitRoom(w: number, h: number): Fit {
 
 type Hover = { id: string; x: number; y: number } | null;
 
-export function PixelKitchen({ state, pickedId, onPick }: { state: ServiceState | null; pickedId: string | null; onPick: (id: string | null) => void }) {
+export function PixelKitchen({ state, pickedId, onPick }: { state: ServiceState | null; pickedId: string | null; onPick: (id: string | null, at: { x: number; y: number }) => void }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [box, setBox] = useState({ w: 800, h: 600 });
   const fit = useMemo(() => fitRoom(box.w, box.h), [box]);
-  // One world per mount (the parent remounts this per service).
+  // One world for the whole session: brigades come and go through the door.
   const [world] = useState(() => new KitchenWorld(modelInfo(state?.headChef ?? "claude-opus-5").hat, fit.cols, fit.rows));
   const [hover, setHover] = useState<Hover>(null);
 
@@ -109,7 +111,7 @@ export function PixelKitchen({ state, pickedId, onPick }: { state: ServiceState 
           onMouseLeave={() => setHover(null)}
           onClick={(e) => {
             const p = toNative(e);
-            onPick(world.hitTest(p.x, p.y));
+            onPick(world.hitTest(p.x, p.y), { x: e.clientX, y: e.clientY });
           }}
         />
       </div>

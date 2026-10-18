@@ -21,16 +21,26 @@ export function hireable(keys: Keys): string[] {
   return MODELS.filter((m) => providers.includes(m.provider)).map((m) => m.id);
 }
 
-export function languageModel(modelId: string, keys: Keys): LanguageModel {
-  const info = modelInfo(modelId);
-  if (info.provider === "anthropic") {
-    const apiKey = keys.anthropic || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("No Anthropic API key: add one in the kitchen settings.");
-    return createAnthropic({ apiKey })(modelId);
-  }
+function anthropicFor(keys: Keys) {
+  const apiKey = keys.anthropic || process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("No Anthropic API key: add one in the kitchen settings.");
+  return createAnthropic({ apiKey });
+}
+function openaiFor(keys: Keys) {
   const apiKey = keys.openai || process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("No OpenAI API key: add one in the kitchen settings.");
-  return createOpenAI({ apiKey })(modelId);
+  return createOpenAI({ apiKey });
+}
+
+export function languageModel(modelId: string, keys: Keys): LanguageModel {
+  const info = modelInfo(modelId);
+  return info.provider === "anthropic" ? anthropicFor(keys)(modelId) : openaiFor(keys)(modelId);
+}
+
+/** The provider's own web search, run on their side: the chef's cookbook. */
+export function webSearchTool(modelId: string, keys: Keys) {
+  const info = modelInfo(modelId);
+  return info.provider === "anthropic" ? anthropicFor(keys).tools.webSearch_20250305({ maxUses: 2 }) : openaiFor(keys).tools.webSearch({});
 }
 
 /**
