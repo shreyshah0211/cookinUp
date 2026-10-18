@@ -40,6 +40,9 @@ export type Plating = z.infer<typeof PlatingSchema>;
 
 export type Usage = { inputTokens: number; outputTokens: number; costUsd: number };
 
+/** One earlier order in the same chat: what was asked and what the kitchen served. */
+export type Turn = { task: string; answer: string };
+
 export type StationStatus = "idle" | "waiting" | "cooking" | "done" | "burnt";
 
 export type StationState = StationSpec & {

@@ -6,7 +6,7 @@
 import { merge, plan, rebalance, runStation } from "./engine";
 import { modelInfo } from "./models";
 import { hireable, type Keys } from "./providers";
-import type { ServiceState, StationOutput, StationState, Usage } from "./schemas";
+import type { ServiceState, StationOutput, StationState, Turn, Usage } from "./schemas";
 
 export type RerunOptions = { instruction?: string; model?: string; token_budget?: number };
 
@@ -24,8 +24,12 @@ export class KitchenService {
   private platingRun = 0;
   private platingAbort?: AbortController;
 
-  constructor(args: { id: string; task: string; keys: Keys; headChef: string; totalBudget: number }) {
+  // Earlier orders in this chat; every chef reads them, so follow-ups make sense.
+  private context: Turn[];
+
+  constructor(args: { id: string; task: string; keys: Keys; headChef: string; totalBudget: number; context?: Turn[] }) {
     this.keys = args.keys;
+    this.context = args.context ?? [];
     this.state = {
       id: args.id,
       task: args.task,
@@ -95,6 +99,7 @@ export class KitchenService {
         headChef: this.state.headChef,
         totalBudget: this.state.totalBudget,
         models: onShift.length > 0 ? onShift : this.state.hireable,
+        context: this.context,
         keys: this.keys,
       });
       this.state = {
@@ -255,6 +260,7 @@ export class KitchenService {
       station: st,
       upstream,
       notes: st.notes,
+      context: this.context,
       keys: this.keys,
       signal: abort.signal,
     })
@@ -299,6 +305,7 @@ export class KitchenService {
         headChef: this.state.headChef,
         outputs,
         burnt,
+        context: this.context,
         keys: this.keys,
         // The final dish restates the stations' work, so it needs about as much room as all of them.
         maxOutputTokens: Math.max(6000, this.state.totalBudget),

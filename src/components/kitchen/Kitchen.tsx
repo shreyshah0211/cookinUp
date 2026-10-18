@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { loadChats, loadSnapshots, placeOrder, saveChats, saveSnapshots, stationAction, useKeys, useServices, type Chat } from "@/lib/brigade/client";
+import { conversationFor, loadChats, loadSnapshots, placeOrder, saveChats, saveSnapshots, stationAction, useKeys, useServices, type Chat } from "@/lib/brigade/client";
 import { DEFAULT_BUDGET, DEFAULT_HEAD_CHEF, MODELS } from "@/lib/brigade/models";
 import type { ServiceState } from "@/lib/brigade/schemas";
 
@@ -126,7 +126,9 @@ export function Kitchen() {
     setOrderError(null);
     setPickedId(null);
     try {
-      const id = await placeOrder({ task, totalBudget, headChef, keys });
+      // Everything served so far in this chat goes with the order, so follow-ups make sense.
+      const context = conversationFor([...history, ...(state ? [state] : [])]);
+      const id = await placeOrder({ task, totalBudget, headChef, keys, context });
       setChats((cs) => cs.map((c) => (c.id === active.id ? { ...c, title: c.title || task.slice(0, 60), orderIds: [...c.orderIds, id] } : c)));
     } catch (e) {
       setOrderError(e instanceof Error ? e.message : String(e));

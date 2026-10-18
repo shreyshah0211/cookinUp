@@ -14,6 +14,7 @@ import {
   type Plating,
   type StationOutput,
   type StationSpec,
+  type Turn,
   type Usage,
 } from "./schemas";
 
@@ -78,12 +79,13 @@ export async function plan(args: {
   totalBudget: number;
   /** Model ids there are keys for; the first is the fallback. */
   models: string[];
+  context?: Turn[];
   keys: Keys;
 }): Promise<Call<Menu>> {
   const { object, usage } = await callJson({
     modelId: args.headChef,
     keys: args.keys,
-    prompt: headChefPrompt(args.task, args.models, args.totalBudget),
+    prompt: headChefPrompt(args.task, args.models, args.totalBudget, args.context),
     schema: MenuSchema,
     maxOutputTokens: 4000,
     effort: "medium",
@@ -104,6 +106,7 @@ export async function runStation(args: {
   station: StationSpec;
   upstream: StationOutput[];
   notes: string[];
+  context?: Turn[];
   keys: Keys;
   signal?: AbortSignal;
 }): Promise<Call<StationOutput>> {
@@ -126,6 +129,7 @@ export async function merge(args: {
   headChef: string;
   outputs: StationOutput[];
   burnt: StationSpec[];
+  context?: Turn[];
   keys: Keys;
   maxOutputTokens: number;
   signal?: AbortSignal;
@@ -133,7 +137,7 @@ export async function merge(args: {
   return callJson({
     modelId: args.headChef,
     keys: args.keys,
-    prompt: expediterPrompt(args.task, args.outputs, args.burnt),
+    prompt: expediterPrompt(args.task, args.outputs, args.burnt, args.context),
     schema: PlatingSchema,
     maxOutputTokens: args.maxOutputTokens,
     effort: "low",

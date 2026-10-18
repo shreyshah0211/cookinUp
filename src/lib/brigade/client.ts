@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-import type { ServiceState } from "./schemas";
+import type { ServiceState, Turn } from "./schemas";
 
 export type StoredKeys = { anthropic: string; openai: string };
 const KEYS = "cookinup.keys";
@@ -54,11 +54,20 @@ function keyHeaders(keys: StoredKeys = readKeys()): Record<string, string> {
   return headers;
 }
 
-export async function placeOrder(args: { task: string; totalBudget: number; headChef: string; keys: StoredKeys }): Promise<string> {
+/** The chat so far, as the kitchen should remember it: the last few served orders, long answers trimmed. */
+export function conversationFor(history: ServiceState[]): Turn[] {
+  const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "\n…(trimmed)" : s);
+  return history
+    .filter((s) => s.status === "served" && s.plating)
+    .slice(-6)
+    .map((s) => ({ task: clip(s.task, 4000), answer: clip(s.plating!.final, 12000) }));
+}
+
+export async function placeOrder(args: { task: string; totalBudget: number; headChef: string; keys: StoredKeys; context?: Turn[] }): Promise<string> {
   const res = await fetch("/api/service", {
     method: "POST",
     headers: keyHeaders(args.keys),
-    body: JSON.stringify({ task: args.task, totalBudget: args.totalBudget, headChef: args.headChef }),
+    body: JSON.stringify({ task: args.task, totalBudget: args.totalBudget, headChef: args.headChef, context: args.context ?? [] }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error ?? "Could not place the order");
