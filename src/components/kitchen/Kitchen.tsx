@@ -7,20 +7,26 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { conversationFor, loadChats, loadSnapshots, placeOrder, saveChats, saveSnapshots, stationAction, useKeys, useServices, type Chat } from "@/lib/brigade/client";
+import { CHALLENGES, challengeById, type Challenge } from "@/lib/brigade/challenges";
+import { conversationFor, gradeOrder, loadChats, loadSnapshots, placeOrder, saveChats, saveSnapshots, stationAction, useKeys, useServices, type Chat } from "@/lib/brigade/client";
+import { LESSONS, TOPICS, type Topic } from "@/lib/brigade/lessons";
 import { DEFAULT_BUDGET, DEFAULT_HEAD_CHEF, MODELS } from "@/lib/brigade/models";
 import type { ServiceState } from "@/lib/brigade/schemas";
 
+import { ChallengeTracker } from "./ChallengeTracker";
 import { ChefCard } from "./ChefCard";
 import { HeadChefCard } from "./HeadChefCard";
 import { Hud, type HudOpen } from "./Hud";
 import { KeysDialog } from "./KeysDialog";
+import { Toast, WhyList, type Learned } from "./Lessons";
 import { MindPanel } from "./MindPanel";
 import { OrderBook } from "./OrderBook";
 import { OrderTicket } from "./OrderTicket";
 import { PixelKitchen } from "./PixelKitchen";
 import { Popup, type Anchor } from "./Popup";
 import { add, ReceiptList } from "./Receipt";
+import { RecipeBook, type Badges } from "./RecipeBook";
+import { Ticker } from "./Ticker";
 
 const newChat = (): Chat => ({ id: crypto.randomUUID(), title: "", orderIds: [], createdAt: Date.now() });
 
@@ -31,9 +37,11 @@ type Open =
   | { kind: "keys" }
   | { kind: "head" }
   | { kind: "station"; id: string; mind?: boolean }
-  | { kind: "mind"; who: "head" | "expo" };
+  | { kind: "mind"; who: "head" | "expo" }
+  | { kind: "why"; who: string }
+  | { kind: "book"; tab: "challenges" | "lessons"; focus?: Topic };
 
-const STATUS_WORD: Record<ServiceState["status"], string> = { planning: "planning", cooking: "cooking", plating: "plating", served: "served", failed: "fire" };
+const STATUS_WORD: Record<ServiceState["status"], string> = { planning: "planning", review: "your menu", cooking: "cooking", plating: "plating", served: "served", failed: "fire" };
 
 export function Kitchen() {
   const keys = useKeys();
@@ -51,18 +59,36 @@ export function Kitchen() {
     setAnchor(at);
   };
 
-  // Who you are, remembered in this browser.
+  // Who you are, whether the kitchen explains itself, and what you have learned, remembered in this browser.
   const [userName, setUserName] = useState("Chef");
+  const [learn, setLearn] = useState(true);
+  const [storedLessons, setStoredLessons] = useState<Learned>({});
+  const [badges, setBadges] = useState<Badges>({});
+  const [reviewMenu, setReviewMenu] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => {
       try {
         setUserName(localStorage.getItem("cookinup.name") || "Chef");
+        setLearn(localStorage.getItem("cookinup.learn") !== "off");
+        setStoredLessons(JSON.parse(localStorage.getItem("cookinup.lessons") ?? "{}"));
+        setBadges(JSON.parse(localStorage.getItem("cookinup.badges") ?? "{}"));
+        setReviewMenu(localStorage.getItem("cookinup.review") === "on");
       } catch {
         // No storage: defaults are fine.
       }
     }, 0);
     return () => clearTimeout(t);
   }, []);
+  const toggleLearn = () => {
+    setLearn((on) => {
+      try {
+        localStorage.setItem("cookinup.learn", on ? "off" : "on");
+      } catch {
+        // ignore
+      }
+      return !on;
+    });
+  };
   const renameUser = (name: string) => {
     setUserName(name);
     try {
@@ -107,6 +133,93 @@ export function Kitchen() {
   const orders = useMemo(() => orderIds.map((id) => states[id]).filter((s): s is ServiceState => !!s), [orderIds, states]);
   const stations = useMemo(() => state?.stations ?? [], [state]);
   const events = useMemo(() => state?.events ?? [], [state]);
+  // Lessons: the stored ones plus every explanation in any order this browser remembers, newest example wins.
+  const learned = useMemo(() => {
+    const out: Learned = { ...storedLessons };
+    for (const s of Object.values(states)) {
+      for (const e of s.events ?? []) {
+        if (e.kind !== "explain" || !e.topic) continue;
+        const had = out[e.topic];
+        if (!had || had.at < e.at) out[e.topic] = { text: e.text, at: e.at };
+      }
+    }
+    return out;
+  }, [states, storedLessons]);
+  const learnedCount = TOPICS.filter((t) => learned[t]).length;
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      localStorage.setItem("cookinup.lessons", JSON.stringify(learned));
+    } catch {
+      // ignore
+    }
+  }, [learned, loaded]);
+  // What you already knew when the page opened: only lessons learned after that get a toast.
+  const [known, setKnown] = useState<Set<Topic> | null>(null);
+  useEffect(() => {
+    if (!loaded || known) return;
+    const t = setTimeout(() => setKnown(new Set(TOPICS.filter((x) => learned[x]))), 0);
+    return () => clearTimeout(t);
+  }, [loaded, known, learned]);
+  // One toast at a time: a batch of new lessons becomes one ("+2 more"); badges get a gold one.
+  type ToastMsg = { key: string; kicker: string; title: string; gold?: boolean; open: Open };
+  const [toast, setToast] = useState<ToastMsg | null>(null);
+  const [toasted, setToasted] = useState<Topic[]>([]);
+  const fresh = learn && known ? TOPICS.filter((t) => learned[t] && !known.has(t) && !toasted.includes(t)) : [];
+  const freshKey = fresh.join(",");
+  useEffect(() => {
+    if (!freshKey) return;
+    const topics = freshKey.split(",") as Topic[];
+    const t = setTimeout(() => {
+      setToasted((xs) => [...xs, ...topics]);
+      setToast({ key: freshKey, kicker: topics.length > 1 ? `${topics.length} lessons unlocked` : "Lesson unlocked", title: LESSONS[topics[0]].title + (topics.length > 1 ? ` +${topics.length - 1} more` : ""), open: { kind: "book", tab: "lessons", focus: topics[0] } });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [freshKey]);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4200);
+    return () => clearTimeout(t);
+  }, [toast]);
+  const notes = useMemo(() => orders.flatMap((o) => (o.events ?? []).filter((e) => e.kind === "explain")), [orders]);
+  const nameOf = (id: string) => (id === "head" ? "Head chef" : id === "expo" ? "Expediter" : (orders.flatMap((o) => o.stations).find((s) => s.id === id)?.title ?? id));
+
+  // The challenge this chat is playing, the judge's scores, and the verdict on its latest order.
+  const challenge = challengeById(active?.challenge);
+  const [grades, setGrades] = useState<Record<string, { score: number; reason: string }>>({});
+  const [grading, setGrading] = useState<string | null>(null);
+  const needsGrade = challenge?.rubric && state?.status === "served" && !grades[state.id] && grading !== state.id ? state.id : null;
+  useEffect(() => {
+    if (!needsGrade || !challenge?.rubric) return;
+    const t = setTimeout(() => {
+      setGrading(needsGrade);
+      gradeOrder(needsGrade, challenge.rubric!)
+        .then((g) => setGrades((m) => ({ ...m, [needsGrade]: g })))
+        .catch((e) => setGrades((m) => ({ ...m, [needsGrade]: { score: 0, reason: `The judge could not score it: ${e instanceof Error ? e.message : e}` } })));
+    }, 0);
+    return () => clearTimeout(t);
+  }, [needsGrade, challenge]);
+  const verdict = challenge && state?.status === "served" && (!challenge.rubric || grades[state.id]) ? challenge.verdict(state, grades[state.id]) : challenge && state?.status === "served" ? challenge.verdict(state) : null;
+  const wonNow = challenge && verdict?.pass && !badges[challenge.id] ? challenge : null;
+  useEffect(() => {
+    if (!wonNow || !verdict) return;
+    const t = setTimeout(() => {
+      setBadges((b) => {
+        const next = { ...b, [wonNow.id]: { at: Date.now(), line: verdict.line } };
+        try {
+          localStorage.setItem("cookinup.badges", JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+      setToast({ key: `badge-${wonNow.id}`, kicker: "Badge earned", title: wonNow.name, gold: true, open: { kind: "book", tab: "challenges" } });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [wonNow, verdict]);
+  // A challenge's task waits in the ticket for you to fire it.
+  const [draft, setDraft] = useState("");
+
   const cost = orders.reduce((acc, s) => add(acc, s.bill), { inputTokens: 0, outputTokens: 0, costUsd: 0 }).costUsd;
 
   // Order up: the plate opens on its own, unless you are busy in another window.
@@ -131,13 +244,42 @@ export function Kitchen() {
     setOrderError(null);
     try {
       // Everything served so far in this chat goes with the order, so follow-ups make sense.
-      const context = conversationFor(orders);
-      const id = await placeOrder({ task, totalBudget, headChef, keys, context });
+      // A challenge starts clean each time, so its numbers are only this order's.
+      const context = challenge ? [] : conversationFor(orders);
+      const id = await placeOrder({ task, totalBudget, headChef, keys, context, review: challenge ? challenge.review : reviewMenu, twist: challenge?.twist });
+      setDraft("");
       setChats((cs) => cs.map((c) => (c.id === active.id ? { ...c, title: c.title || task.slice(0, 60), orderIds: [...c.orderIds, id] } : c)));
     } catch (e) {
       setOrderError(e instanceof Error ? e.message : String(e));
     } finally {
       setOrdering(false);
+    }
+  };
+
+  const startChallenge = (c: Challenge) => {
+    // Resume the chat already playing it, or open a new one with the task ready to fire.
+    const existing = [...chats].reverse().find((x) => x.challenge === c.id && !badges[c.id]);
+    if (existing) {
+      setActiveId(existing.id);
+    } else {
+      const chat = { ...newChat(), title: `Challenge ${c.n}: ${c.name}`, challenge: c.id };
+      setChats((cs) => [...cs, chat]);
+      setActiveId(chat.id);
+      setDraft(c.task);
+    }
+    show({ kind: "ticket" });
+  };
+  const retryChallenge = () => {
+    if (!challenge) return;
+    void order(challenge.task);
+    show({ kind: "ticket" });
+  };
+  const toggleReview = (on: boolean) => {
+    setReviewMenu(on);
+    try {
+      localStorage.setItem("cookinup.review", on ? "on" : "off");
+    } catch {
+      // ignore
     }
   };
 
@@ -168,6 +310,7 @@ export function Kitchen() {
   const pickedId = open?.kind === "station" ? open.id : open?.kind === "head" ? "head" : open?.kind === "ticket" ? "expo" : open?.kind === "mind" ? open.who : null;
   const onPick = (id: string | null, at: Anchor) => {
     if (!id) return show(null);
+    if (id.startsWith("why:")) return show({ kind: "why", who: id.slice(4) }, at);
     if (id.startsWith("thought:")) {
       const who = id.slice(8);
       return who === "head" || who === "expo" ? show({ kind: "mind", who }, at) : show({ kind: "station", id: who, mind: true }, at);
@@ -183,13 +326,43 @@ export function Kitchen() {
   const replate = () => state && void stationAction(state.id, { action: "replate" }).catch(() => {});
 
   return (
-    <div className="relative h-dvh w-screen overflow-hidden">
-      <PixelKitchen state={state} pickedId={pickedId} onPick={onPick} />
-      <Hud title={active?.title || "New order"} status={state ? STATUS_WORD[state.status] : null} cost={cost} open={hudOpen} onOpen={toggleHud} />
+    <div className="relative flex h-dvh w-screen flex-col overflow-hidden">
+      <div className="relative min-h-0 flex-1">
+        <PixelKitchen state={state} pickedId={pickedId} learn={learn} onPick={onPick} />
+      </div>
+      {learn && <Ticker notes={notes} nameOf={nameOf} onWhy={(who) => show({ kind: "why", who })} />}
+      <Hud
+        title={active?.title || "New order"}
+        status={state ? STATUS_WORD[state.status] : null}
+        cost={cost}
+        open={hudOpen}
+        onOpen={toggleHud}
+        learn={learn}
+        onLearn={toggleLearn}
+        book={`${CHALLENGES.filter((c) => badges[c.id]).length}/${CHALLENGES.length} · ${learnedCount}/${TOPICS.length}`}
+        bookOpen={open?.kind === "book"}
+        onBook={() => show(open?.kind === "book" ? null : { kind: "book", tab: "challenges" })}
+      />
+      {challenge && <ChallengeTracker challenge={challenge} order={state} verdict={verdict} earned={!!badges[challenge.id]} onRetry={retryChallenge} onBook={() => show({ kind: "book", tab: "challenges" })} />}
+      {toast && <Toast key={toast.key} kicker={toast.kicker} title={toast.title} gold={toast.gold} onOpen={() => show(toast.open)} />}
+
+      {open?.kind === "book" && (
+        <Popup title="Recipe book" width={600} onClose={() => show(null)}>
+          <RecipeBook key={open.tab + (open.focus ?? "")} tab={open.tab} badges={badges} learned={learned} focus={open.focus} activeChallenge={challenge?.id} onStart={startChallenge} />
+        </Popup>
+      )}
+      {open?.kind === "why" && (
+        <Popup title={`Why? · ${nameOf(open.who)}`} tag="learn" width={420} anchor={anchor} onClose={() => show(null)}>
+          <WhyList notes={notes.filter((e) => e.from === open.who)} />
+          <button className="pix-btn pix-btn-plain mt-3" onClick={() => show({ kind: "book", tab: "lessons" })}>
+            All lessons
+          </button>
+        </Popup>
+      )}
 
       {open?.kind === "ticket" && (
         <Popup title="Order ticket" tag={active?.title ? `${orders.length} course${orders.length === 1 ? "" : "s"}` : undefined} width={620} onClose={() => show(null)}>
-          <OrderTicket orders={orders} busy={ordering} hasKeys={hasKeys} onSend={(t) => void order(t)} onPick={(id) => show({ kind: "station", id })} onReplate={replate} onOpenKeys={() => show({ kind: "keys" })} />
+          <OrderTicket key={activeId ?? ""} orders={orders} busy={ordering} hasKeys={hasKeys} hireable={hireable} draft={draft} onSend={(t) => void order(t)} onPick={(id) => show({ kind: "station", id })} onReplate={replate} onOpenKeys={() => show({ kind: "keys" })} />
         </Popup>
       )}
       {open?.kind === "orders" && (
@@ -225,7 +398,7 @@ export function Kitchen() {
       )}
       {open?.kind === "head" && (
         <Popup title="Head chef" tag="settings" width={400} anchor={anchor} onClose={() => show(null)}>
-          <HeadChefCard headChef={headChef} onHeadChef={setHeadChef} totalBudget={totalBudget} onTotalBudget={setTotalBudget} keys={keys} onKeys={() => show({ kind: "keys" })} />
+          <HeadChefCard headChef={headChef} onHeadChef={setHeadChef} totalBudget={totalBudget} onTotalBudget={setTotalBudget} review={reviewMenu} onReview={toggleReview} keys={keys} onKeys={() => show({ kind: "keys" })} />
         </Popup>
       )}
       {open?.kind === "mind" && (

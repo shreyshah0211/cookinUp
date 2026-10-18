@@ -10,19 +10,25 @@ const Body = z.object({
   headChef: z.string().default(DEFAULT_HEAD_CHEF),
   /** Earlier orders in this chat, oldest first. */
   context: z.array(z.object({ task: z.string().max(4000), answer: z.string().max(12000) })).max(8).default([]),
+  /** Stop after the menu for the user to edit it. */
+  review: z.boolean().default(false),
+  /** A challenge's note to the head chef. */
+  twist: z.string().max(500).optional(),
 });
 
 // Order in. Keys ride in headers, land in the service's memory and nowhere else.
 export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Bad order ticket" }, { status: 400 });
-  const { task, totalBudget, headChef, context } = parsed.data;
+  const { task, totalBudget, headChef, context, review, twist } = parsed.data;
   const service = new KitchenService({
     id: crypto.randomUUID(),
     task,
     totalBudget,
     headChef: MODEL_IDS.includes(headChef) ? headChef : DEFAULT_HEAD_CHEF,
     context,
+    review,
+    twist,
     keys: {
       anthropic: request.headers.get("x-anthropic-key") ?? undefined,
       openai: request.headers.get("x-openai-key") ?? undefined,

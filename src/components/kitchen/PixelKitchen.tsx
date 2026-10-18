@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { LESSONS } from "@/lib/brigade/lessons";
 import { modelInfo } from "@/lib/brigade/models";
 import type { ServiceState } from "@/lib/brigade/schemas";
 import { KitchenWorld } from "@/pixel/engine";
@@ -26,7 +27,7 @@ function fitRoom(w: number, h: number): Fit {
 
 type Hover = { id: string; x: number; y: number } | null;
 
-export function PixelKitchen({ state, pickedId, onPick }: { state: ServiceState | null; pickedId: string | null; onPick: (id: string | null, at: { x: number; y: number }) => void }) {
+export function PixelKitchen({ state, pickedId, learn, onPick }: { state: ServiceState | null; pickedId: string | null; learn: boolean; onPick: (id: string | null, at: { x: number; y: number }) => void }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [box, setBox] = useState({ w: 800, h: 600 });
@@ -49,7 +50,13 @@ export function PixelKitchen({ state, pickedId, onPick }: { state: ServiceState 
   }, [state, world, fit.cols, fit.rows]);
   useEffect(() => {
     world.focus(pickedId, hover?.id ?? null);
+    // Hovering a "?" counts as reading it: the badge stops pulsing once you move on.
+    if (hover?.id.startsWith("why:")) world.ack(hover.id.slice(4));
   }, [world, pickedId, hover]);
+  useEffect(() => {
+    world.setLearn(learn);
+  }, [world, learn]);
+  const whyFor = hover?.id.startsWith("why:") ? state?.events.findLast((e) => e.kind === "explain" && e.from === hover.id.slice(4)) : undefined;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -114,6 +121,17 @@ export function PixelKitchen({ state, pickedId, onPick }: { state: ServiceState 
             onPick(world.hitTest(p.x, p.y), { x: e.clientX, y: e.clientY });
           }}
         />
+        {whyFor && hover && (
+          <div className="why-tip" style={{ left: hover.x * fit.scale, top: hover.y * fit.scale, transform: hover.x * fit.scale > W / 2 ? "translate(calc(-100% - 14px), 12px)" : "translate(14px, 12px)" }}>
+            {whyFor.topic && (
+              <span className="pix-tag mb-1" style={{ background: LESSONS[whyFor.topic].color }}>
+                {LESSONS[whyFor.topic].title}
+              </span>
+            )}
+            <div>{whyFor.text}</div>
+            <div className="mt-1 text-[10px] text-[#7a6f63]">Click for more</div>
+          </div>
+        )}
       </div>
     </div>
   );

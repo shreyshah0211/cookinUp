@@ -82,6 +82,11 @@ export class KitchenWorld {
   private talk: KitchenEvent[] = [];
   /** Where each thought bubble was drawn this frame, so a click can land on it. */
   private thoughtRects = new Map<string, { x: number; y: number; w: number; h: number }>();
+  /** Learn mode: "?" badges on whatever was just explained. */
+  private learn = true;
+  private whyRects = new Map<string, { x: number; y: number; w: number; h: number }>();
+  /** The newest explanation each place has been looked at, so its badge can stop pulsing. */
+  private seenWhy = new Map<string, number>();
   /** The last few things that happened, for debugging (`__kitchen.log`). */
   log: string[] = [];
   hovered: string | null = null;
@@ -105,6 +110,29 @@ export class KitchenWorld {
     return `t=${this.t.toFixed(1)} ${this.layout.cols}x${this.layout.rows} ` + [...this.chefs.values()].map((e) => `${e.id}@${Math.round(e.x)},${Math.round(e.y)} p${e.path.length} k${e.tasks.length} ${e.work ?? "-"}`).join(" | ");
   }
 
+  setLearn(on: boolean) {
+    this.learn = on;
+  }
+
+  /** Someone looked at this place's explanation. */
+  ack(id: string) {
+    const last = this.latestWhy(id);
+    if (last) this.seenWhy.set(id, last.id);
+  }
+
+  private latestWhy(id: string): KitchenEvent | undefined {
+    for (let i = this.talk.length - 1; i >= 0; i--) if (this.talk[i].kind === "explain" && this.talk[i].from === id) return this.talk[i];
+    return undefined;
+  }
+
+  /** A badge shows while the newest explanation is fresh and not yet looked at (or is being hovered). */
+  private showWhy(id: string): boolean {
+    if (!this.learn) return false;
+    if (this.hovered === `why:${id}`) return true;
+    const last = this.latestWhy(id);
+    return !!last && (this.seenWhy.get(id) ?? 0) < last.id && Date.now() - last.at < 45_000;
+  }
+
   focus(picked: string | null, hovered: string | null) {
     this.picked = picked;
     this.hovered = hovered;
@@ -113,6 +141,7 @@ export class KitchenWorld {
   /** One word for what someone is doing, for the hover label. */
   statusWord(id: string): string {
     if (id.startsWith("thought:")) return "Thinking";
+    if (id.startsWith("why:")) return "Why?";
     if (id === "head") return this.status === "planning" ? "Planning" : this.status === "served" ? "Done" : this.status ? "Watching" : "Idle";
     if (id === "expo") return this.status === "plating" ? "Plating" : this.status === "served" ? "Served" : this.status === "failed" ? "Fire" : "Waiting";
     const e = this.chefs.get(id);
@@ -438,6 +467,9 @@ export class KitchenWorld {
   /** What is under a point in native pixels: a thought bubble ("thought:<id>"), a station (by counter or chef), "head" or "expo". */
   hitTest(px: number, py: number): string | null {
     const L = this.layout;
+    for (const [id, r] of this.whyRects) {
+      if (px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h) return `why:${id}`;
+    }
     for (const [id, r] of this.thoughtRects) {
       if (px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h) return `thought:${id}`;
     }
@@ -628,7 +660,23 @@ export class KitchenWorld {
       const img = sprite(BUBBLES[kind], BUBBLE_PALETTE);
       ctx.drawImage(img, Math.round(e.x) + 4, Math.round(e.y) - 8 - CHEF_H + 10 - img.height + 2);
     }
-    const hoveredId = this.hovered?.startsWith("thought:") ? this.hovered.slice(8) : this.hovered;
+    // "?" badges: by the token meter for a station, beside the head for the head chef and expediter.
+    this.whyRects.clear();
+    for (const [id, slot] of L.slots) {
+      if (!this.showWhy(id)) continue;
+      const x = slot.counter.x * TILE - 4;
+      const y = slot.counter.y * TILE - 14;
+      D.whyBadge(ctx, x, y, t + slot.index, this.hovered === `why:${id}`);
+      this.whyRects.set(id, { x: x - 2, y: y - 2, w: 11, h: 14 });
+    }
+    for (const e of [this.head, this.expo]) {
+      if (!this.showWhy(e.id)) continue;
+      const x = Math.round(e.x) + TILE + 1;
+      const y = Math.round(e.y) - (CHEF_H - TILE) + 2;
+      D.whyBadge(ctx, x, y, t, this.hovered === `why:${e.id}`);
+      this.whyRects.set(e.id, { x: x - 2, y: y - 2, w: 11, h: 14 });
+    }
+    const hoveredId = this.hovered?.startsWith("why:") ? null : this.hovered?.startsWith("thought:") ? this.hovered.slice(8) : this.hovered;
     const target = hoveredId ? all.find((e) => e.id === hoveredId) : undefined;
     if (target) {
       const h = headOf(target);

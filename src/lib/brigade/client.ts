@@ -63,11 +63,11 @@ export function conversationFor(history: ServiceState[]): Turn[] {
     .map((s) => ({ task: clip(s.task, 4000), answer: clip(s.plating!.final, 12000) }));
 }
 
-export async function placeOrder(args: { task: string; totalBudget: number; headChef: string; keys: StoredKeys; context?: Turn[] }): Promise<string> {
+export async function placeOrder(args: { task: string; totalBudget: number; headChef: string; keys: StoredKeys; context?: Turn[]; review?: boolean; twist?: string }): Promise<string> {
   const res = await fetch("/api/service", {
     method: "POST",
     headers: keyHeaders(args.keys),
-    body: JSON.stringify({ task: args.task, totalBudget: args.totalBudget, headChef: args.headChef, context: args.context ?? [] }),
+    body: JSON.stringify({ task: args.task, totalBudget: args.totalBudget, headChef: args.headChef, context: args.context ?? [], review: !!args.review, twist: args.twist }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error ?? "Could not place the order");
@@ -76,7 +76,14 @@ export async function placeOrder(args: { task: string; totalBudget: number; head
 
 export async function stationAction(
   serviceId: string,
-  body: { action: "rerun" | "budget" | "stop" | "replate"; stationId?: string; instruction?: string; model?: string; token_budget?: number },
+  body: {
+    action: "rerun" | "budget" | "stop" | "replate" | "menu";
+    stationId?: string;
+    instruction?: string;
+    model?: string;
+    token_budget?: number;
+    stations?: { id: string; title: string; goal: string; depends_on: string[]; model: string; token_budget: number; tools?: "web"[] }[];
+  },
 ): Promise<void> {
   const res = await fetch(`/api/service/${serviceId}/station`, {
     method: "POST",
@@ -150,7 +157,16 @@ const isOver = (s?: ServiceState) => !!s && (s.status === "served" || s.status =
 
 // --- the conversation list, remembered in this browser ---
 
-export type Chat = { id: string; title: string; orderIds: string[]; createdAt: number };
+/** A chat: a run of orders. `challenge` marks one started from the recipe book. */
+export type Chat = { id: string; title: string; orderIds: string[]; createdAt: number; challenge?: string };
+
+/** A judge's score for a plated answer (challenges only). */
+export async function gradeOrder(serviceId: string, rubric: string): Promise<{ score: number; reason: string; costUsd: number }> {
+  const res = await fetch(`/api/service/${serviceId}/grade`, { method: "POST", headers: keyHeaders(), body: JSON.stringify({ rubric }) });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error ?? "Could not grade");
+  return body;
+}
 const CHATS = "cookinup.chats";
 const SNAPSHOTS = "cookinup.snapshots";
 

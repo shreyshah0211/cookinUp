@@ -9,7 +9,7 @@ import { MODELS, modelInfo, TIER_NAMES, tierOf } from "@/lib/brigade/models";
 import { PixelChef } from "./PixelChef";
 import { stars } from "./StationRow";
 
-export function HeadChefCard(p: { headChef: string; onHeadChef: (m: string) => void; totalBudget: number; onTotalBudget: (n: number) => void; keys: StoredKeys; onKeys: () => void }) {
+export function HeadChefCard(p: { headChef: string; onHeadChef: (m: string) => void; totalBudget: number; onTotalBudget: (n: number) => void; review: boolean; onReview: (on: boolean) => void; keys: StoredKeys; onKeys: () => void }) {
   const hasKeys = !!(p.keys.anthropic || p.keys.openai);
   const noKey = (provider: "anthropic" | "openai") => hasKeys && !p.keys[provider];
   return (
@@ -37,6 +37,10 @@ export function HeadChefCard(p: { headChef: string; onHeadChef: (m: string) => v
         <span className="flex items-center gap-1">
           <input type="number" min={1000} max={60000} step={500} value={p.totalBudget} onChange={(e) => p.onTotalBudget(Number(e.target.value))} className="tinput w-24" /> tokens
         </span>
+      </label>
+      <label className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-muted">Let me check the menu before cooking</span>
+        <input type="checkbox" checked={p.review} onChange={(e) => p.onReview(e.target.checked)} />
       </label>
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted">{hasKeys ? "API keys are set in this browser." : "No API keys yet."}</span>

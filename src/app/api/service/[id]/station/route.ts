@@ -3,7 +3,12 @@ import { z } from "zod";
 import { getService } from "@/lib/brigade/registry";
 
 const Body = z.object({
-  action: z.enum(["rerun", "budget", "stop", "replate"]),
+  action: z.enum(["rerun", "budget", "stop", "replate", "menu"]),
+  /** For "menu": the edited stations to cook. */
+  stations: z
+    .array(z.object({ id: z.string(), title: z.string(), goal: z.string(), depends_on: z.array(z.string()), model: z.string(), token_budget: z.number(), tools: z.array(z.enum(["web"])).optional() }))
+    .max(12)
+    .optional(),
   stationId: z.string().optional(),
   instruction: z.string().trim().optional(),
   model: z.string().optional(),
@@ -18,7 +23,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!service) return Response.json({ error: "No such service" }, { status: 404 });
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Bad request" }, { status: 400 });
-  const { stationId, action, instruction, model, token_budget } = parsed.data;
+  const { stationId, action, instruction, model, token_budget, stations } = parsed.data;
   // Keys added since the order was placed ride along, so a new provider's chefs can be hired now.
   service.updateKeys({
     anthropic: request.headers.get("x-anthropic-key") ?? undefined,
@@ -26,6 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   });
   try {
     if (action === "replate") service.replate();
+    else if (action === "menu") service.serveMenu(stations ?? []);
     else if (!stationId) return Response.json({ error: "Which station?" }, { status: 400 });
     else if (action === "rerun") service.rerun(stationId, { instruction: instruction || undefined, model, token_budget });
     else if (action === "budget" && token_budget !== undefined) service.setBudget(stationId, token_budget);

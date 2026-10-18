@@ -11,10 +11,32 @@ import { useClock } from "@/lib/brigade/client";
 import type { ServiceState } from "@/lib/brigade/schemas";
 
 import { Markdown } from "./Markdown";
+import { MenuEditor } from "./MenuEditor";
 import { Dots, StationRow } from "./StationRow";
 
-export function OrderTicket({ orders, busy, hasKeys, onSend, onPick, onReplate, onOpenKeys }: { orders: ServiceState[]; busy: boolean; hasKeys: boolean; onSend: (text: string) => void; onPick: (id: string) => void; onReplate: () => void; onOpenKeys: () => void }) {
-  const [text, setText] = useState("");
+export function OrderTicket({
+  orders,
+  busy,
+  hasKeys,
+  hireable,
+  draft = "",
+  onSend,
+  onPick,
+  onReplate,
+  onOpenKeys,
+}: {
+  orders: ServiceState[];
+  busy: boolean;
+  hasKeys: boolean;
+  hireable: string[];
+  /** Text to start the order box with (a challenge's task). */
+  draft?: string;
+  onSend: (text: string) => void;
+  onPick: (id: string) => void;
+  onReplate: () => void;
+  onOpenKeys: () => void;
+}) {
+  const [text, setText] = useState(draft);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const live = orders.at(-1) ?? null;
@@ -50,7 +72,7 @@ export function OrderTicket({ orders, busy, hasKeys, onSend, onPick, onReplate, 
         </div>
       )}
       {orders.map((o, i) => (
-        <Course key={o.id} n={i + 1} state={o} now={now} live={i === orders.length - 1} onPick={onPick} onReplate={onReplate} />
+        <Course key={o.id} n={i + 1} state={o} now={now} live={i === orders.length - 1} hireable={hireable} onPick={onPick} onReplate={onReplate} />
       ))}
       <div ref={endRef} />
       <form
@@ -83,7 +105,7 @@ export function OrderTicket({ orders, busy, hasKeys, onSend, onPick, onReplate, 
 }
 
 /** One course: the order on a ticket, the stations and their bars, re-fires, the plate. */
-function Course({ n, state, now, live, onPick, onReplate }: { n: number; state: ServiceState; now: number; live: boolean; onPick: (id: string) => void; onReplate: () => void }) {
+function Course({ n, state, now, live, hireable, onPick, onReplate }: { n: number; state: ServiceState; now: number; live: boolean; hireable: string[]; onPick: (id: string) => void; onReplate: () => void }) {
   const [showNotes, setShowNotes] = useState(false);
   const s = state.stations;
   const notes = s
@@ -97,7 +119,7 @@ function Course({ n, state, now, live, onPick, onReplate }: { n: number; state: 
   const done = s.filter((x) => x.status === "done").length;
   const working = state.status === "planning" || state.status === "cooking" || state.status === "plating";
   const headline =
-    state.status === "planning" ? "Head chef is writing the menu" : state.status === "plating" ? "Expediter is plating" : state.status === "served" ? "Order up" : state.status === "failed" ? "Stopped" : `Cooking · ${done}/${s.length}`;
+    state.status === "planning" ? "Head chef is writing the menu" : state.status === "review" ? "Your call: check the menu" : state.status === "plating" ? "Expediter is plating" : state.status === "served" ? "Order up" : state.status === "failed" ? "Stopped" : `Cooking · ${done}/${s.length}`;
   const pick = live ? onPick : () => {};
   return (
     <section className="flex flex-col gap-2">
@@ -106,7 +128,9 @@ function Course({ n, state, now, live, onPick, onReplate }: { n: number; state: 
           <span className="pix-tag">Course {n}</span>
           <span className="text-[10px] text-muted">{new Date(state.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
         </div>
-        <p className="mt-1 whitespace-pre-wrap text-[13px]">{state.task}</p>
+        <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-[13px]" title={state.task}>
+          {state.task}
+        </p>
       </div>
 
       <div className="border-2 border-line bg-paper px-3 py-2">
@@ -115,7 +139,12 @@ function Course({ n, state, now, live, onPick, onReplate }: { n: number; state: 
           {working && <Dots />}
         </div>
         {s.length === 0 && state.status === "planning" && <p className="mt-1 text-[12px] text-muted">Breaking the order into stations…</p>}
-        {s.length > 0 && (
+        {state.status === "review" && live && (
+          <div className="mt-2">
+            <MenuEditor state={state} hireable={hireable} />
+          </div>
+        )}
+        {s.length > 0 && state.status !== "review" && (
           <ul className="mt-2 space-y-2">
             {s.map((st) => (
               <li key={st.id}>

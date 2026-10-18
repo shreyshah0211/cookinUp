@@ -54,7 +54,9 @@ export type KitchenEvent = {
   at: number;
   from: string;
   to?: string;
-  kind: "say" | "think" | "tool";
+  kind: "say" | "think" | "tool" | "explain";
+  /** For explanations: which lesson this is an example of. */
+  topic?: import("./lessons").Topic;
   text: string;
   detail?: string;
   tool?: "web_search" | "ask_chef";
@@ -77,7 +79,7 @@ export type StationState = StationSpec & {
   history: { instruction: string; output?: StationOutput; error?: string; at: number }[];
 };
 
-export type ServiceStatus = "planning" | "cooking" | "plating" | "served" | "failed";
+export type ServiceStatus = "planning" | "review" | "cooking" | "plating" | "served" | "failed";
 
 export type ServiceState = {
   id: string;

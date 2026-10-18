@@ -87,12 +87,13 @@ export async function plan(args: {
   /** Model ids there are keys for; the first is the fallback. */
   models: string[];
   context?: Turn[];
+  twist?: string;
   keys: Keys;
 }): Promise<Call<Menu>> {
   const { object, usage } = await callJson({
     modelId: args.headChef,
     keys: args.keys,
-    prompt: headChefPrompt(args.task, args.models, args.totalBudget, args.context),
+    prompt: headChefPrompt(args.task, args.models, args.totalBudget, args.context) + (args.twist ? `\n\nNote from the customer: ${args.twist}` : ""),
     schema: MenuSchema,
     maxOutputTokens: 4000,
     effort: "medium",

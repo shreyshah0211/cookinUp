@@ -170,6 +170,88 @@ body {
 }
 .hud-hint { font-family: var(--font-pixel), monospace; font-size: 7px; color: rgba(255, 253, 245, 0.55); white-space: nowrap; text-transform: uppercase; }
 
+/* Learn mode: the kitchen-notes strip, the "why" tooltip, lessons and the unlock toast. */
+.ticker {
+  flex-shrink: 0;
+  height: 76px;
+  display: flex;
+  gap: 10px;
+  background: #2b2520;
+  border-top: 3px solid #2b2520;
+  box-shadow: inset 0 2px 0 #4a4036;
+  color: #f3ecdc;
+  padding: 6px 12px 4px;
+}
+.ticker-label { font-family: var(--font-pixel), monospace; font-size: 8px; text-transform: uppercase; color: #2b2520; background: #f4a261; padding: 4px 5px 3px; align-self: flex-start; }
+.ticker-list { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.ticker-list li { padding: 1px 4px; border-left: 2px solid transparent; }
+.ticker-list li:hover { background: rgba(255, 253, 245, 0.06); border-left-color: #f4a261; }
+@keyframes tickerIn { from { background: rgba(244, 162, 97, 0.35); transform: translateY(-4px); } to { background: transparent; transform: none; } }
+.ticker-new { animation: tickerIn 1.6s ease-out; }
+.why-tip {
+  position: absolute;
+  z-index: 15;
+  width: 280px;
+  background: #fffdf5;
+  color: #2b2520;
+  border: 3px solid #2b2520;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+.lesson { background: #fffdf5; border: 2px solid var(--line); border-left: 5px solid var(--line); padding: 8px 10px; }
+.lesson-locked { background: repeating-linear-gradient(45deg, #f3ead8, #f3ead8 6px, #efe4cf 6px, #efe4cf 12px); }
+.lesson-focus { outline: 3px solid #f4a261; }
+@keyframes toastIn { 0% { transform: translate(-50%, -30px) scale(0.9); opacity: 0; } 12% { transform: translate(-50%, 0) scale(1.04); opacity: 1; } 20% { transform: translate(-50%, 0) scale(1); } 88% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -10px); } }
+.toast {
+  position: fixed;
+  z-index: 40;
+  top: 150px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f2c14e;
+  color: #2b2520;
+  border: 3px solid #2b2520;
+  box-shadow: 4px 4px 0 #2b2520;
+  padding: 8px 14px 8px 10px;
+  animation: toastIn 4.2s ease-out forwards;
+  cursor: pointer;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast-gold { background: #ffe08a; box-shadow: 4px 4px 0 #2b2520, 0 0 0 4px #e2b53e; }
+.toast-star { font-size: 22px; line-height: 1; color: #fffdf5; text-shadow: 2px 2px 0 #2b2520; animation: spin 1.2s steps(8) 1; }
+
+/* Challenges: the list in the recipe book, the medals, and the tracker over the kitchen. */
+.challenge { display: flex; gap: 10px; align-items: flex-start; border: 2px solid var(--line); background: #fffdf5; padding: 8px 10px; }
+.challenge-active { border-color: #f4a261; }
+.challenge-locked { opacity: 0.55; background: repeating-linear-gradient(45deg, #f3ead8, #f3ead8 6px, #efe4cf 6px, #efe4cf 12px); }
+.medal {
+  width: 30px; height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-pixel), monospace; font-size: 11px;
+  border: 3px solid #2b2520; background: #e6dcc6; color: #7a6f63;
+  box-shadow: 2px 2px 0 #2b2520;
+}
+.medal-won { background: #f2c14e; color: #fffdf5; text-shadow: 1px 1px 0 #2b2520; font-size: 14px; }
+.tracker {
+  position: fixed; z-index: 21; top: 46px; left: 50%; transform: translateX(-50%);
+  width: min(440px, calc(100vw - 24px));
+  background: #fffdf5; color: #2b2520;
+  border: 3px solid #2b2520; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
+  padding: 6px 10px 7px;
+  --line: #cdbf9f; --ink-muted: #7a6f63; --foreground: #2b2520;
+}
+.tracker-pass { box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45), 0 0 0 3px #3d8b5a; }
+.tracker-fail { box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45), 0 0 0 3px #e76f51; }
+.tracker-dot { width: 8px; height: 8px; flex-shrink: 0; background: #f4a261; }
+.tracker-dot-live { animation: dot 1.2s ease-in-out infinite; }
+.tracker-dot-pass { background: #3d8b5a; }
+.tracker-dot-fail { background: #e76f51; }
+
 /* Tickets on the order window: the order you wrote, and notes to a chef. */
 .ticket {
   background: #fff9e8;

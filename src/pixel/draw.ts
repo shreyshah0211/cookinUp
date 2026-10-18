@@ -516,6 +516,20 @@ export function tokenMeter(ctx: Ctx, x: number, y: number, used: number, budget:
   }
 }
 
+/** The "why?" badge: a gold tag with a question mark that bobs while it is new. */
+export function whyBadge(ctx: Ctx, x: number, y: number, t: number, hot: boolean) {
+  const bob = Math.sin(t * 6) > 0 ? 0 : -1;
+  const yy = y + bob;
+  R(ctx, x - 1, yy - 1, 9, 10, C.outline);
+  R(ctx, x, yy, 7, 8, hot ? "#fff1b0" : Math.floor(t * 3) % 2 ? "#f2c14e" : "#e9a23b");
+  R(ctx, x, yy, 7, 1, "#fff6cf");
+  // a pixel question mark
+  R(ctx, x + 2, yy + 1, 3, 1, C.outline);
+  R(ctx, x + 4, yy + 2, 1, 2, C.outline);
+  R(ctx, x + 3, yy + 4, 1, 1, C.outline);
+  R(ctx, x + 3, yy + 6, 1, 1, C.outline);
+}
+
 /** A small star, 5 wide and 4 tall. */
 function star(ctx: Ctx, x: number, y: number, c = "#f2c14e") {
   R(ctx, x + 2, y, 1, 1, c);
