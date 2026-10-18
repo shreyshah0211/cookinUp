@@ -46,14 +46,19 @@ export function useKeys(): StoredKeys {
   );
 }
 
-export async function placeOrder(args: { task: string; totalBudget: number; headChef: string; models: string[]; keys: StoredKeys }): Promise<string> {
+/** Headers carrying the keys: sent with every call that may hire a chef, never stored server-side. */
+function keyHeaders(keys: StoredKeys = readKeys()): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (args.keys.anthropic) headers["x-anthropic-key"] = args.keys.anthropic;
-  if (args.keys.openai) headers["x-openai-key"] = args.keys.openai;
+  if (keys.anthropic) headers["x-anthropic-key"] = keys.anthropic;
+  if (keys.openai) headers["x-openai-key"] = keys.openai;
+  return headers;
+}
+
+export async function placeOrder(args: { task: string; totalBudget: number; headChef: string; keys: StoredKeys }): Promise<string> {
   const res = await fetch("/api/service", {
     method: "POST",
-    headers,
-    body: JSON.stringify({ task: args.task, totalBudget: args.totalBudget, headChef: args.headChef, models: args.models }),
+    headers: keyHeaders(args.keys),
+    body: JSON.stringify({ task: args.task, totalBudget: args.totalBudget, headChef: args.headChef }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error ?? "Could not place the order");
@@ -66,7 +71,7 @@ export async function stationAction(
 ): Promise<void> {
   const res = await fetch(`/api/service/${serviceId}/station`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: keyHeaders(),
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error((await res.json()).error ?? "Station refused");

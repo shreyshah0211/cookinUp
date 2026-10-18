@@ -1,7 +1,7 @@
 "use client";
 
-// Click the head chef: who runs the pass, how big the pantry is, which chefs
-// are on shift, and the keys. Applies to the next order.
+// Click the head chef: who runs the pass, how big the pantry is, and the
+// keys. Applies to the next order.
 
 import type { StoredKeys } from "@/lib/brigade/client";
 import { MODELS, modelInfo } from "@/lib/brigade/models";
@@ -13,8 +13,6 @@ export function HeadChefCard(p: {
   onHeadChef: (m: string) => void;
   totalBudget: number;
   onTotalBudget: (n: number) => void;
-  offShift: string[];
-  onOffShift: (ids: string[]) => void;
   keys: StoredKeys;
   onKeys: () => void;
   onClose: () => void;
@@ -50,33 +48,13 @@ export function HeadChefCard(p: {
           <input type="number" min={1000} max={60000} step={500} value={p.totalBudget} onChange={(e) => p.onTotalBudget(Number(e.target.value))} className="tinput w-24" /> tokens
         </span>
       </label>
-      <div className="text-xs">
-        <div className="mb-1 text-muted">Chefs on shift (who may be hired)</div>
-        <div className="flex flex-wrap gap-1.5">
-          {MODELS.map((m) => {
-            const off = p.offShift.includes(m.id) || noKey(m.provider);
-            return (
-              <button
-                key={m.id}
-                className={`tbtn ${off ? "tbtn-plain line-through" : ""}`}
-                disabled={noKey(m.provider)}
-                title={noKey(m.provider) ? "No key for this provider" : `$${m.inputPerM} in / $${m.outputPerM} out per million tokens`}
-                onClick={() => p.onOffShift(p.offShift.includes(m.id) ? p.offShift.filter((x) => x !== m.id) : [...p.offShift, m.id])}
-              >
-                <span className="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={{ background: m.hat }} />
-                {m.label} <span className="text-muted">${m.inputPerM}/${m.outputPerM}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted">{hasKeys ? "API keys are set in this browser." : "No API keys yet."}</span>
         <button className={`tbtn ${hasKeys ? "" : "tbtn-primary"}`} onClick={p.onKeys}>
           {hasKeys ? "Change keys" : "Add API keys"}
         </button>
       </div>
-      <p className="text-xs text-muted">Changes apply to the next order.</p>
+      <p className="text-xs text-muted">Changes apply to the next order. The head chef hires chefs at or below their own rate; click any chef to switch their model.</p>
     </div>
   );
 }

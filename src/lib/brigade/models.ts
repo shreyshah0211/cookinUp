@@ -26,8 +26,6 @@ export const MODEL_IDS = MODELS.map((m) => m.id);
 export const DEFAULT_MODEL = "claude-haiku-4-5";
 export const DEFAULT_HEAD_CHEF = "claude-haiku-4-5";
 export const DEFAULT_BUDGET = 4000;
-/** Who is on shift by default: just the cheapest model while testing. */
-export const DEFAULT_SHIFT = ["claude-haiku-4-5"];
 
 export function modelInfo(id: string): ModelInfo {
   return MODELS.find((m) => m.id === id) ?? MODELS.find((m) => m.id === DEFAULT_MODEL)!;

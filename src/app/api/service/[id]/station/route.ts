@@ -19,6 +19,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Bad request" }, { status: 400 });
   const { stationId, action, instruction, model, token_budget } = parsed.data;
+  // Keys added since the order was placed ride along, so a new provider's chefs can be hired now.
+  service.updateKeys({
+    anthropic: request.headers.get("x-anthropic-key") ?? undefined,
+    openai: request.headers.get("x-openai-key") ?? undefined,
+  });
   try {
     if (action === "replate") service.replate();
     else if (!stationId) return Response.json({ error: "Which station?" }, { status: 400 });

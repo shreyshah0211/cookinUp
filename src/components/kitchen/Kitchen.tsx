@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { loadChats, loadSnapshots, placeOrder, saveChats, saveSnapshots, stationAction, useKeys, useServices, type Chat } from "@/lib/brigade/client";
-import { DEFAULT_BUDGET, DEFAULT_HEAD_CHEF, DEFAULT_SHIFT, MODELS } from "@/lib/brigade/models";
+import { DEFAULT_BUDGET, DEFAULT_HEAD_CHEF, MODELS } from "@/lib/brigade/models";
 import type { ServiceState } from "@/lib/brigade/schemas";
 
 import { ChatPanel } from "./ChatPanel";
@@ -28,7 +28,8 @@ export function Kitchen() {
   const [showKeys, setShowKeys] = useState(false);
   const [headChef, setHeadChef] = useState(DEFAULT_HEAD_CHEF);
   const [totalBudget, setTotalBudget] = useState(DEFAULT_BUDGET);
-  const [offShift, setOffShift] = useState<string[]>(() => MODELS.map((m) => m.id).filter((id) => !DEFAULT_SHIFT.includes(id)));
+  // Any chef whose provider has a key can be hired, now or on a re-run.
+  const hireable = useMemo(() => MODELS.filter((m) => keys[m.provider]).map((m) => m.id), [keys]);
 
   // The chat's width; drag the divider to change it, and the kitchen refills the rest.
   const [chatWidth, setChatWidth] = useState(560);
@@ -125,8 +126,7 @@ export function Kitchen() {
     setOrderError(null);
     setPickedId(null);
     try {
-      const models = MODELS.map((m) => m.id).filter((m) => !offShift.includes(m));
-      const id = await placeOrder({ task, totalBudget, headChef, models, keys });
+      const id = await placeOrder({ task, totalBudget, headChef, keys });
       setChats((cs) => cs.map((c) => (c.id === active.id ? { ...c, title: c.title || task.slice(0, 60), orderIds: [...c.orderIds, id] } : c)));
     } catch (e) {
       setOrderError(e instanceof Error ? e.message : String(e));
@@ -179,8 +179,6 @@ export function Kitchen() {
           onHeadChef={setHeadChef}
           totalBudget={totalBudget}
           onTotalBudget={setTotalBudget}
-          offShift={offShift}
-          onOffShift={setOffShift}
           keys={keys}
           onKeys={() => setShowKeys(true)}
           onClose={() => setPickedId(null)}
@@ -202,7 +200,7 @@ export function Kitchen() {
       );
     }
     if (picked && state && serviceId) {
-      return <ChefCard key={picked.id} serviceId={serviceId} station={picked} hireable={state.hireable} onClose={() => setPickedId(null)} />;
+      return <ChefCard key={picked.id} serviceId={serviceId} station={picked} hireable={hireable} onClose={() => setPickedId(null)} />;
     }
     return undefined;
   })();

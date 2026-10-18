@@ -24,17 +24,14 @@ export class KitchenService {
   private platingRun = 0;
   private platingAbort?: AbortController;
 
-  constructor(args: { id: string; task: string; keys: Keys; headChef: string; totalBudget: number; models?: string[] }) {
+  constructor(args: { id: string; task: string; keys: Keys; headChef: string; totalBudget: number }) {
     this.keys = args.keys;
-    // Chefs on shift: the models with keys, narrowed to the ones the user kept on.
-    const withKeys = hireable(args.keys);
-    const onShift = args.models ? withKeys.filter((m) => args.models!.includes(m)) : withKeys;
     this.state = {
       id: args.id,
       task: args.task,
       status: "planning",
       headChef: args.headChef,
-      hireable: onShift.length > 0 ? onShift : withKeys,
+      hireable: hireable(args.keys),
       totalBudget: args.totalBudget,
       stations: [],
       bill: zeroUsage(),
@@ -74,6 +71,15 @@ export class KitchenService {
     this.state = { ...this.state, stations: this.state.stations.map((s) => (s.id === id ? change(s) : s)) };
   }
 
+  /** Keys added since the order was placed: more chefs become hireable. Blank keys change nothing. */
+  updateKeys(keys: Keys) {
+    const next = { anthropic: keys.anthropic || this.keys.anthropic, openai: keys.openai || this.keys.openai };
+    if (next.anthropic === this.keys.anthropic && next.openai === this.keys.openai) return;
+    this.keys = next;
+    this.state = { ...this.state, hireable: hireable(next) };
+    this.emit();
+  }
+
   /** Order in: plan the menu, then cook. Resolves when the dish is served (or the kitchen failed). */
   async start(): Promise<ServiceState> {
     try {
@@ -81,11 +87,14 @@ export class KitchenService {
       if (!this.state.hireable.includes(this.state.headChef)) {
         throw new Error(`No key for the head chef (${modelInfo(this.state.headChef).label}): pick another or add the key.`);
       }
+      // The head chef hires at or below their own rate; promote any chef by hand afterwards.
+      const rate = modelInfo(this.state.headChef).outputPerM;
+      const onShift = this.state.hireable.filter((m) => modelInfo(m).outputPerM <= rate);
       const { object: menu, usage } = await plan({
         task: this.state.task,
         headChef: this.state.headChef,
         totalBudget: this.state.totalBudget,
-        models: this.state.hireable,
+        models: onShift.length > 0 ? onShift : this.state.hireable,
         keys: this.keys,
       });
       this.state = {
