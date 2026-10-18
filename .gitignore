@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Backboard memory: the assistant id cookinUp creates on first use
+.backboard.json

@@ -4,7 +4,7 @@
 // who they talked to and what was said, newest first. Opened from a thought
 // bubble, or shown at the bottom of a chef's card.
 
-import { LESSONS } from "@/lib/brigade/lessons";
+import { lessonOf } from "@/lib/brigade/lessons";
 import type { KitchenEvent, StationState } from "@/lib/brigade/schemas";
 
 export function MindPanel({ who, events, stations, limit = 30 }: { who: string; events: KitchenEvent[]; stations: StationState[]; limit?: number }) {
@@ -32,7 +32,7 @@ export function MindPanel({ who, events, stations, limit = 30 }: { who: string; 
                 : e.done
                   ? `${name(e.to ?? "")} answered`
                   : `asks ${name(e.to ?? "")}`;
-        const color = e.kind === "explain" ? (e.topic ? LESSONS[e.topic].color : "#e9a23b") : e.kind === "think" ? "#8e7dbe" : e.kind === "tool" ? "#2a9d8f" : e.from === who ? "#c0783a" : "#4d6fb3";
+        const color = e.kind === "explain" ? (lessonOf(e.topic)?.color ?? "#e9a23b") : e.kind === "think" ? "#8e7dbe" : e.kind === "tool" ? "#2a9d8f" : e.from === who ? "#c0783a" : "#4d6fb3";
         return (
           <li key={e.id} className="flex gap-2 border-b border-dashed border-line pb-1.5 text-[12px] last:border-0">
             <span className="w-14 shrink-0 font-mono text-[10px] text-muted">{new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>

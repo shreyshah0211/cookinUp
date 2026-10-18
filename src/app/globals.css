@@ -225,6 +225,16 @@ body {
 .toast-gold { background: #ffe08a; box-shadow: 4px 4px 0 #2b2520, 0 0 0 4px #e2b53e; }
 .toast-star { font-size: 22px; line-height: 1; color: #fffdf5; text-shadow: 2px 2px 0 #2b2520; animation: spin 1.2s steps(8) 1; }
 
+/* The prompt meter under the order box. */
+.meter { border: 2px solid var(--line); background: var(--paper); padding: 6px 8px; }
+.meter-label { font-family: var(--font-pixel), monospace; font-size: 7px; text-transform: uppercase; margin-right: 2px; }
+.meter-bar { display: inline-flex; gap: 2px; margin-right: 6px; }
+.meter-bar span { width: 12px; height: 8px; background: #e6dcc6; border: 1px solid #2b2520; }
+.meter-bar span.on { background: #f4a261; }
+.meter-bar span.on:nth-child(4) { background: #3d8b5a; }
+.meter-chip { font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); color: var(--ink-muted); background: #fffdf5; }
+.meter-chip-ok { border-color: #3d8b5a; color: #2b2520; background: #e3f1e6; }
+
 /* Challenges: the list in the recipe book, the medals, and the tracker over the kitchen. */
 .challenge { display: flex; gap: 10px; align-items: flex-start; border: 2px solid var(--line); background: #fffdf5; padding: 8px 10px; }
 .challenge-active { border-color: #f4a261; }

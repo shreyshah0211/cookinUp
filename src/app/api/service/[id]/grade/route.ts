@@ -2,7 +2,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { costUsd } from "@/lib/brigade/models";
-import { languageModel, providerOptions } from "@/lib/brigade/providers";
+import { availableProviders, keysFromRequest, languageModel, providerOptions } from "@/lib/brigade/providers";
 import { getService } from "@/lib/brigade/registry";
 
 const Body = z.object({ rubric: z.string().max(2000) });
@@ -18,8 +18,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!final) return Response.json({ error: "Nothing plated yet" }, { status: 400 });
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Bad request" }, { status: 400 });
-  const keys = { anthropic: request.headers.get("x-anthropic-key") ?? undefined, openai: request.headers.get("x-openai-key") ?? undefined };
-  const judge = keys.anthropic || process.env.ANTHROPIC_API_KEY ? "claude-haiku-4-5" : "gpt-5.4-mini";
+  const keys = keysFromRequest(request);
+  // The cheapest judge there is a key for.
+  const have = availableProviders(keys);
+  const judge = have.includes("anthropic") ? "claude-haiku-4-5" : have.includes("openai") ? "gpt-5.4-mini" : "gemini-3.5-flash-lite";
   try {
     const r = await generateText({
       model: languageModel(judge, keys),

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { DEFAULT_HEAD_CHEF, MODEL_IDS } from "@/lib/brigade/models";
+import { keysFromRequest } from "@/lib/brigade/providers";
 import { putService } from "@/lib/brigade/registry";
 import { KitchenService } from "@/lib/brigade/service";
 
@@ -29,10 +30,7 @@ export async function POST(request: Request) {
     context,
     review,
     twist,
-    keys: {
-      anthropic: request.headers.get("x-anthropic-key") ?? undefined,
-      openai: request.headers.get("x-openai-key") ?? undefined,
-    },
+    keys: keysFromRequest(request),
   });
   putService(service);
   void service.start();

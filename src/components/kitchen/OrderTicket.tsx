@@ -12,6 +12,7 @@ import type { ServiceState } from "@/lib/brigade/schemas";
 
 import { Markdown } from "./Markdown";
 import { MenuEditor } from "./MenuEditor";
+import { PromptMeter, PromptScore } from "./PromptMeter";
 import { Dots, StationRow } from "./StationRow";
 
 export function OrderTicket({
@@ -76,7 +77,7 @@ export function OrderTicket({
       ))}
       <div ref={endRef} />
       <form
-        className="sticky bottom-0 -mx-3.5 -mb-3 flex gap-2 border-t-2 border-dashed border-line bg-background px-3.5 py-3"
+        className="sticky bottom-0 -mx-3.5 -mb-3 flex flex-wrap gap-2 border-t-2 border-dashed border-line bg-background px-3.5 py-3"
         onSubmit={(e) => {
           e.preventDefault();
           fire();
@@ -99,6 +100,9 @@ export function OrderTicket({
         <button className="pix-btn self-end" type="submit" disabled={busy || !text.trim()}>
           {busy ? "Firing…" : "Fire!"}
         </button>
+        <div className="w-full">
+          <PromptMeter text={text} />
+        </div>
       </form>
     </div>
   );
@@ -126,6 +130,7 @@ function Course({ n, state, now, live, hireable, onPick, onReplate }: { n: numbe
       <div className="ticket">
         <div className="flex items-center gap-2">
           <span className="pix-tag">Course {n}</span>
+          <PromptScore text={state.task} />
           <span className="text-[10px] text-muted">{new Date(state.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
         </div>
         <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-[13px]" title={state.task}>

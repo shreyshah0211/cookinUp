@@ -1,7 +1,7 @@
 // The chefs you can hire: every model the kitchen can run a station on, with
 // the price used for the bill (USD per 1M tokens, first-party API rates).
 
-export type Provider = "anthropic" | "openai";
+export type Provider = "anthropic" | "openai" | "google";
 
 export type ModelInfo = {
   id: string;
@@ -19,6 +19,9 @@ export const MODELS: ModelInfo[] = [
   { id: "claude-haiku-4-5", label: "Haiku 4.5", provider: "anthropic", hat: "#FCD34D", inputPerM: 1, outputPerM: 5 },
   { id: "gpt-5.5", label: "GPT-5.5", provider: "openai", hat: "#10B981", inputPerM: 5, outputPerM: 30 },
   { id: "gpt-5.4-mini", label: "GPT-5.4 mini", provider: "openai", hat: "#6EE7B7", inputPerM: 0.75, outputPerM: 4.5 },
+  { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", provider: "google", hat: "#4285F4", inputPerM: 2, outputPerM: 12 },
+  { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", provider: "google", hat: "#8AB4F8", inputPerM: 0.75, outputPerM: 3.75 },
+  { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite", provider: "google", hat: "#C2D7FB", inputPerM: 0.3, outputPerM: 2.5 },
 ];
 
 export const MODEL_IDS = MODELS.map((m) => m.id);

@@ -12,7 +12,13 @@ export function conversationBlock(context: Turn[]): string[] {
   ];
 }
 
-export function headChefPrompt(task: string, models: string[], totalBudget: number, context: Turn[] = []): string {
+/** What the kitchen remembers about this customer from earlier orders (Backboard memory; read-only here). */
+export function memoryBlock(memory: string[] = []): string[] {
+  if (memory.length === 0) return [];
+  return ["## What the kitchen remembers about this customer", "From earlier orders. Follow these where they apply to this task; ignore any that don't.", ...memory.map((m) => `- ${m}`), ""];
+}
+
+export function headChefPrompt(task: string, models: string[], totalBudget: number, context: Turn[] = [], memory: string[] = []): string {
   return [
     "You are the head chef of a kitchen of AI agents. Break the user's task into 2-6 subtasks (stations) that are as independent as possible so they can run in parallel.",
     "For each station give: an id (short snake_case), a title, a goal, the ids it depends on (only when it truly needs their output), a model, a token budget (max output tokens), and tools.",
@@ -28,6 +34,7 @@ export function headChefPrompt(task: string, models: string[], totalBudget: numb
     "Station goals must be self-contained: when the task refers to an earlier answer, restate in each goal what it needs from it (the chefs see the conversation too, but spell it out).",
     "",
     ...conversationBlock(context),
+    ...memoryBlock(memory),
     `Task: ${task}`,
   ].join("\n");
 }
@@ -39,8 +46,9 @@ export function lineCookPrompt(args: {
   notes: string[];
   context?: Turn[];
   research?: string;
+  memory?: string[];
 }): string {
-  const { task, station, upstream, notes, context = [], research } = args;
+  const { task, station, upstream, notes, context = [], research, memory = [] } = args;
   const inputs =
     upstream.length === 0
       ? "(none - you are a first-course station)"
@@ -54,6 +62,7 @@ export function lineCookPrompt(args: {
     `Keep your result within about ${station.token_budget} tokens.`,
     "",
     ...conversationBlock(context),
+    ...memoryBlock(memory),
     "## Inputs from other stations",
     inputs,
     "",
@@ -82,11 +91,12 @@ export function researchPrompt(args: { task: string; station: StationSpec; upstr
     .join("\n");
 }
 
-export function expediterPrompt(task: string, outputs: StationOutput[], burnt: StationSpec[], context: Turn[] = []): string {
+export function expediterPrompt(task: string, outputs: StationOutput[], burnt: StationSpec[], context: Turn[] = [], memory: string[] = []): string {
   return [
     `You are the expediter. Combine the work of several stations into one final answer for: ${task}`,
     "",
     ...conversationBlock(context),
+    ...memoryBlock(memory),
     "## Station outputs",
     outputs.map((o) => `### ${o.station_id}\nAssumptions: ${o.assumptions.join("; ") || "none"}\n\n${o.result}`).join("\n\n"),
     burnt.length ? `\n## Stations that failed (work around them, and say so in the final)\n${burnt.map((b) => `- ${b.id}: ${b.title}`).join("\n")}` : "",

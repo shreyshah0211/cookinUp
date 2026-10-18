@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { keysFromRequest } from "@/lib/brigade/providers";
 import { getService } from "@/lib/brigade/registry";
 
 const Body = z.object({
@@ -25,10 +26,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!parsed.success) return Response.json({ error: "Bad request" }, { status: 400 });
   const { stationId, action, instruction, model, token_budget, stations } = parsed.data;
   // Keys added since the order was placed ride along, so a new provider's chefs can be hired now.
-  service.updateKeys({
-    anthropic: request.headers.get("x-anthropic-key") ?? undefined,
-    openai: request.headers.get("x-openai-key") ?? undefined,
-  });
+  service.updateKeys(keysFromRequest(request));
   try {
     if (action === "replate") service.replate();
     else if (action === "menu") service.serveMenu(stations ?? []);

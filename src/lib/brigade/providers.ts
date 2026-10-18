@@ -1,17 +1,28 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import type { LanguageModel } from "ai";
+import type { JSONValue, LanguageModel } from "ai";
 
 import { MODELS, modelInfo, type Provider } from "./models";
 
 /** Bring-your-own keys. Held in memory for one service; never logged or stored. */
-export type Keys = { anthropic?: string; openai?: string };
+export type Keys = { anthropic?: string; openai?: string; google?: string };
+
+/** The keys the browser sent with a request (headers only; never stored). */
+export function keysFromRequest(request: Request): Keys {
+  return {
+    anthropic: request.headers.get("x-anthropic-key") ?? undefined,
+    openai: request.headers.get("x-openai-key") ?? undefined,
+    google: request.headers.get("x-google-key") ?? undefined,
+  };
+}
 
 /** The providers a service can actually call: a key from the browser, or a dev key in the env. */
 export function availableProviders(keys: Keys): Provider[] {
   const out: Provider[] = [];
   if (keys.anthropic || process.env.ANTHROPIC_API_KEY) out.push("anthropic");
   if (keys.openai || process.env.OPENAI_API_KEY) out.push("openai");
+  if (keys.google || process.env.GOOGLE_GENERATIVE_AI_API_KEY) out.push("google");
   return out;
 }
 
@@ -32,14 +43,21 @@ function openaiFor(keys: Keys) {
   return createOpenAI({ apiKey });
 }
 
+function googleFor(keys: Keys) {
+  const apiKey = keys.google || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  if (!apiKey) throw new Error("No Gemini API key: add one in the kitchen settings.");
+  return createGoogleGenerativeAI({ apiKey });
+}
+
 export function languageModel(modelId: string, keys: Keys): LanguageModel {
-  const info = modelInfo(modelId);
-  return info.provider === "anthropic" ? anthropicFor(keys)(modelId) : openaiFor(keys)(modelId);
+  const p = modelInfo(modelId).provider;
+  return p === "anthropic" ? anthropicFor(keys)(modelId) : p === "google" ? googleFor(keys)(modelId) : openaiFor(keys)(modelId);
 }
 
 /** The provider's own web search, run on their side: the chef's cookbook. */
 export function webSearchTool(modelId: string, keys: Keys) {
   const info = modelInfo(modelId);
+  if (info.provider === "google") return googleFor(keys).tools.googleSearch({});
   return info.provider === "anthropic" ? anthropicFor(keys).tools.webSearch_20250305({ maxUses: 2 }) : openaiFor(keys).tools.webSearch({});
 }
 
@@ -48,8 +66,10 @@ export function webSearchTool(modelId: string, keys: Keys) {
  * the head chef and expediter at medium. Both providers count reasoning
  * tokens against the output cap, so callers add headroom to maxOutputTokens.
  */
-export function providerOptions(modelId: string, effort: "low" | "medium"): Record<string, Record<string, string>> {
-  if (modelInfo(modelId).provider === "openai") return { openai: { reasoningEffort: effort, textVerbosity: "low" } };
+export function providerOptions(modelId: string, effort: "low" | "medium"): Record<string, Record<string, JSONValue>> {
+  const provider = modelInfo(modelId).provider;
+  if (provider === "openai") return { openai: { reasoningEffort: effort, textVerbosity: "low" } };
+  if (provider === "google") return { google: { thinkingConfig: { thinkingLevel: effort } } };
   // Haiku 4.5 predates `effort` and rejects it; it runs without thinking anyway.
   if (modelId.startsWith("claude-haiku")) return {};
   return { anthropic: { effort } };

@@ -7,6 +7,7 @@
 import { useState } from "react";
 
 import { fmtElapsed, fmtUsd, stationAction, useClock } from "@/lib/brigade/client";
+import { coachNote } from "@/lib/brigade/coach";
 import { MODELS, modelInfo, TIER_NAMES, tierOf } from "@/lib/brigade/models";
 import type { KitchenEvent, StationState } from "@/lib/brigade/schemas";
 import { lookFor } from "@/pixel/sprites";
@@ -138,7 +139,13 @@ export function ChefCard({
           if (note.trim()) void act({ stationId: s.id, action: "rerun", instruction: note.trim() });
         }}
       >
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Tell this chef what to change…" className="tinput resize-none" />
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Tell this chef exactly what to change…" className="tinput resize-none" />
+        {coachNote(note) && (
+          <p className={`text-[12px] ${coachNote(note)!.ok ? "text-[#3d8b5a]" : "text-[#c0783a]"}`}>
+            {coachNote(note)!.ok ? "✓ " : ""}
+            {coachNote(note)!.tip}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <button className="pix-btn" type="submit" disabled={busy || !note.trim()}>
             Send & re-fire

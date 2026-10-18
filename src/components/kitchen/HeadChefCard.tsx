@@ -4,14 +4,14 @@
 // keys. Applies to the next order.
 
 import type { StoredKeys } from "@/lib/brigade/client";
-import { MODELS, modelInfo, TIER_NAMES, tierOf } from "@/lib/brigade/models";
+import { MODELS, modelInfo, TIER_NAMES, tierOf, type Provider } from "@/lib/brigade/models";
 
 import { PixelChef } from "./PixelChef";
 import { stars } from "./StationRow";
 
 export function HeadChefCard(p: { headChef: string; onHeadChef: (m: string) => void; totalBudget: number; onTotalBudget: (n: number) => void; review: boolean; onReview: (on: boolean) => void; keys: StoredKeys; onKeys: () => void }) {
-  const hasKeys = !!(p.keys.anthropic || p.keys.openai);
-  const noKey = (provider: "anthropic" | "openai") => hasKeys && !p.keys[provider];
+  const hasKeys = !!(p.keys.anthropic || p.keys.openai || p.keys.google);
+  const noKey = (provider: Provider) => hasKeys && !p.keys[provider];
   return (
     <div className="flex flex-col gap-3 text-[13px]">
       <div className="flex items-center gap-2">

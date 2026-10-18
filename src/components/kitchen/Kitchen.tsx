@@ -9,7 +9,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { CHALLENGES, challengeById, type Challenge } from "@/lib/brigade/challenges";
 import { conversationFor, gradeOrder, loadChats, loadSnapshots, placeOrder, saveChats, saveSnapshots, stationAction, useKeys, useServices, type Chat } from "@/lib/brigade/client";
-import { LESSONS, TOPICS, type Topic } from "@/lib/brigade/lessons";
+import { coach } from "@/lib/brigade/coach";
+import { LESSONS, lessonOf, TOPICS, type Topic } from "@/lib/brigade/lessons";
 import { DEFAULT_BUDGET, DEFAULT_HEAD_CHEF, MODELS } from "@/lib/brigade/models";
 import type { ServiceState } from "@/lib/brigade/schemas";
 
@@ -45,7 +46,7 @@ const STATUS_WORD: Record<ServiceState["status"], string> = { planning: "plannin
 
 export function Kitchen() {
   const keys = useKeys();
-  const hasKeys = !!(keys.anthropic || keys.openai);
+  const hasKeys = !!(keys.anthropic || keys.openai || keys.google);
   const [headChef, setHeadChef] = useState(DEFAULT_HEAD_CHEF);
   const [totalBudget, setTotalBudget] = useState(DEFAULT_BUDGET);
   // Any chef whose provider has a key can be hired, now or on a re-run.
@@ -135,12 +136,18 @@ export function Kitchen() {
   const events = useMemo(() => state?.events ?? [], [state]);
   // Lessons: the stored ones plus every explanation in any order this browser remembers, newest example wins.
   const learned = useMemo(() => {
-    const out: Learned = { ...storedLessons };
+    const out: Learned = Object.fromEntries(Object.entries(storedLessons).filter(([t]) => lessonOf(t)));
     for (const s of Object.values(states)) {
+      // Asking well: each check your own order passed teaches that lesson, with your words as the example.
+      for (const c of coach(s.task).checks) {
+        if (!c.ok) continue;
+        const had = out[c.key];
+        if (!had || had.at < s.createdAt) out[c.key] = { text: `“${s.task.length > 80 ? s.task.slice(0, 79) + "…" : s.task}”`, at: s.createdAt };
+      }
       for (const e of s.events ?? []) {
-        if (e.kind !== "explain" || !e.topic) continue;
-        const had = out[e.topic];
-        if (!had || had.at < e.at) out[e.topic] = { text: e.text, at: e.at };
+        if (e.kind !== "explain" || !lessonOf(e.topic)) continue;
+        const had = out[e.topic!];
+        if (!had || had.at < e.at) out[e.topic!] = { text: e.text, at: e.at };
       }
     }
     return out;

@@ -4,16 +4,14 @@
 // about every change.
 
 import { answerColleague, merge, plan, rebalance, runStation } from "./engine";
-import { modelInfo, TIER_NAMES, tierOf } from "./models";
+import { recall, remember, type Memory } from "./memory";
+import { modelInfo, tierOf } from "./models";
 import type { Topic } from "./lessons";
 import { hireable, type Keys } from "./providers";
 import type { KitchenEvent, ServiceState, StationOutput, StationState, Turn, Usage } from "./schemas";
 
-const usd = (n: number) => (n < 0.01 && n > 0 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`);
-const num = (n: number) => n.toLocaleString("en-US");
 /** "A", "A and B", "A, B and C". */
 const andList = (xs: string[]) => (xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
-const times = (r: number) => (r >= 10 ? Math.round(r).toString() : r.toFixed(1).replace(/\.0$/, ""));
 const clip = (s: string, n = 140) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
 
 export type RerunOptions = { instruction?: string; model?: string; token_budget?: number };
@@ -34,6 +32,11 @@ export class KitchenService {
 
   // Earlier orders in this chat; every chef reads them, so follow-ups make sense.
   private context: Turn[];
+
+  /** What the kitchen remembered when this order came in; fixed for the whole order (read-only memory). */
+  private remembered: string[] = [];
+  /** Lessons already written back, so a re-plate doesn't write them twice. */
+  private written = new Set<string>();
 
   /** Stop after the menu so the user can edit it before anything cooks. */
   private review: boolean;
@@ -104,27 +107,28 @@ export class KitchenService {
   /** The menu, explained: how many stations, and which of them cook side by side. */
   private explainMenu() {
     const st = this.state.stations;
-    if (st.length === 1) return this.explain("head", "split", "1 station: nothing to split.");
+    if (st.length === 1) return this.explain("head", "split", "This order is small, so one chef does it all.");
     const free = st.filter((s) => s.depends_on.length === 0).map((s) => s.title);
-    const waits = st.length - free.length;
-    const parallel = free.length > 1 ? `${andList(free)} cook in parallel` : `${free[0]} goes first`;
-    this.explain("head", "split", `${st.length} stations: ${parallel}${waits ? `, ${waits} wait${waits === 1 ? "s" : ""}` : ""}.`);
+    const parallel = free.length > 1 ? `${andList(free)} happen at the same time` : `${free[0]} goes first`;
+    this.explain("head", "split", `The head chef cut your order into ${st.length} jobs. ${parallel}.`);
   }
 
-  /** The bill, explained: the total, and who ate most of it. */
-  private explainBill() {
-    const parts = [
-      { name: "The head chef's menu", u: this.state.plannerUsage },
-      ...this.state.stations.map((s) => ({ name: s.title, u: s.usage })),
-      { name: "Plating", u: this.state.platingUsage },
-    ].filter((p): p is { name: string; u: Usage } => !!p.u);
-    const total = this.totalBill();
-    const tokens = total.inputTokens + total.outputTokens;
-    const top = [...parts].sort((a, b) => b.u.costUsd - a.u.costUsd)[0];
-    const share = top && total.costUsd > 0 ? Math.round((top.u.costUsd / total.costUsd) * 100) : 0;
-    const biggestWriter = [...parts].sort((a, b) => b.u.outputTokens - a.u.outputTokens)[0];
-    const why = top && biggestWriter && top.name === biggestWriter.name ? "it wrote the most" : "its model costs more";
-    this.explain("expo", "bill", `Total ${num(tokens)} tokens · ${usd(total.costUsd)}.${top ? ` ${top.name} = ${share}% (${why}).` : ""}`);
+  /**
+   * After serving: the customer's corrections and the expediter's notes become
+   * memories for the next order. Written in the background, never mid-order.
+   */
+  private learnFromOrder() {
+    const task = clip(this.state.task, 120);
+    const out: Memory[] = [];
+    for (const s of this.state.stations) {
+      for (const note of s.notes) out.push({ content: `For an order like "${task}", the customer told the ${s.title} chef: "${clip(note, 300)}"`, metadata: { kind: "correction", station: s.title } });
+    }
+    for (const c of this.state.plating?.conflicts ?? []) {
+      out.push({ content: `In the order "${task}", the stations disagreed: ${clip(c.problem, 300)} Settle this up front next time.`, metadata: { kind: "conflict" } });
+    }
+    const fresh = out.filter((m) => !this.written.has(m.content));
+    fresh.forEach((m) => this.written.add(m.content));
+    void remember(fresh);
   }
 
   private titleOf(id: string) {
@@ -141,8 +145,8 @@ export class KitchenService {
 
   /** Keys added since the order was placed: more chefs become hireable. Blank keys change nothing. */
   updateKeys(keys: Keys) {
-    const next = { anthropic: keys.anthropic || this.keys.anthropic, openai: keys.openai || this.keys.openai };
-    if (next.anthropic === this.keys.anthropic && next.openai === this.keys.openai) return;
+    const next = { anthropic: keys.anthropic || this.keys.anthropic, openai: keys.openai || this.keys.openai, google: keys.google || this.keys.google };
+    if (next.anthropic === this.keys.anthropic && next.openai === this.keys.openai && next.google === this.keys.google) return;
     this.keys = next;
     this.state = { ...this.state, hireable: hireable(next) };
     this.emit();
@@ -157,6 +161,8 @@ export class KitchenService {
       }
       this.event({ kind: "think", from: "head", text: "Reading the ticket", detail: this.state.task });
       // The head chef picks a chef for every station from everyone there is a key for.
+      // Read memory once, before planning; nothing is written until the order is served.
+      this.remembered = await recall(this.state.task);
       const { object: menu, usage } = await plan({
         task: this.state.task,
         headChef: this.state.headChef,
@@ -164,6 +170,7 @@ export class KitchenService {
         models: this.state.hireable,
         context: this.context,
         twist: this.twist,
+        memory: this.remembered,
         keys: this.keys,
       });
       this.state = {
@@ -232,7 +239,7 @@ export class KitchenService {
     }
     const before = this.state.stations.length;
     this.state = { ...this.state, status: "cooking", stations };
-    if (stations.length !== before) this.explain("head", "split", `You trimmed the menu from ${before} to ${stations.length} station${stations.length === 1 ? "" : "s"}.`);
+    if (stations.length !== before) this.explain("head", "split", `You changed the menu: ${stations.length} job${stations.length === 1 ? "" : "s"} instead of ${before}.`);
     this.explainMenu();
     this.event({ kind: "say", from: "head", text: `Menu's up: ${stations.length} station${stations.length === 1 ? "" : "s"}. Fire!`, detail: stations.map((s) => `${s.title} → ${modelInfo(s.model).label}: ${s.goal}`).join("\n") });
     this.tick();
@@ -263,16 +270,15 @@ export class KitchenService {
     if (opts.model && modelInfo(opts.model).id !== before) {
       const a = modelInfo(before);
       const b = modelInfo(opts.model);
-      const r = b.outputPerM / a.outputPerM;
-      const expect = r > 1.05 ? `${times(r)}× the price per token` : r < 0.95 ? `${Math.round(r * 100)}% of the price per token` : "same price";
-      this.explain(id, "model", `${st.title}: ${a.label} → ${b.label} (${TIER_NAMES[tierOf(b.id)]}), ${expect}.`);
+      const stronger = tierOf(b.id) > tierOf(a.id) ? "stronger but slower" : tierOf(b.id) < tierOf(a.id) ? "quicker and cheaper" : "about the same";
+      this.explain(id, "helper", `${st.title} now has ${b.label} ${"★".repeat(tierOf(b.id))} as its helper (${stronger}).`);
     }
     this.explain(
       id,
-      "rerun",
+      "fix",
       downstream.length
-        ? `Re-firing ${st.title} + ${andList(downstream.map((d) => this.titleOf(d)))}, which used its work.`
-        : `Re-firing ${st.title} only: nothing else used its work.`,
+        ? `${st.title} is redoing its job. ${andList(downstream.map((d) => this.titleOf(d)))} will redo too, because ${downstream.length === 1 ? "it uses" : "they use"} its work.`
+        : `${st.title} is redoing its job with your note.`,
     );
     this.tick();
   }
@@ -351,7 +357,7 @@ export class KitchenService {
       } else if (s.status !== "waiting") {
         this.patch(s.id, (x) => ({ ...x, status: "waiting" }));
         const blockers = s.depends_on.filter((d) => !done.has(d)).map((d) => this.titleOf(d));
-        this.explain(s.id, "dependency", `${s.title} waits for ${andList(blockers)}.`);
+        this.explain(s.id, "wait", `${s.title} has to wait for ${andList(blockers)}.`);
       }
     }
     for (const s of toFire) this.fire(s.id);
@@ -385,9 +391,9 @@ export class KitchenService {
     {
       const m = modelInfo(st.model);
       const tier = tierOf(st.model);
-      const why = tier === 1 ? "cheap, fast" : tier === 2 ? "all-rounder" : "strongest, priciest";
-      const book = (st.tools ?? []).includes("web") ? " + web" : "";
-      this.explain(id, "hiring", `${st.title} → ${m.label} ${"★".repeat(tier)} (${why}), ${num(st.token_budget)}-token budget${book}.`);
+      const why = tier === 1 ? "a quick helper for an easy job" : tier === 2 ? "a solid helper for a real job" : "the strongest helper, for a hard job";
+      const book = (st.tools ?? []).includes("web") ? " It can look things up online." : "";
+      this.explain(id, "helper", `${st.title} got ${m.label} ${"★".repeat(tier)}: ${why}.${book}`);
     }
     void runStation({
       task: this.state.task,
@@ -395,6 +401,7 @@ export class KitchenService {
       upstream,
       notes: st.notes,
       context: this.context,
+      memory: this.remembered,
       keys: this.keys,
       signal: abort.signal,
       hook: {
@@ -425,10 +432,6 @@ export class KitchenService {
           history: s.history.map((h, i) => (i === s.history.length - 1 ? { ...h, output: object } : h)),
         }));
         this.event({ kind: "say", from: id, to: "expo", text: `Done! ${clip(object.summary, 90)}`, detail: object.summary });
-        this.explain(id, "tokens", `${st.title}: ${num(usage.inputTokens)} in + ${num(usage.outputTokens)} out = ${usd(usage.costUsd)}.`);
-        if (usage.outputTokens > 0 && usage.inputTokens / usage.outputTokens > 4) {
-          this.explain(id, "context", `${st.title} read ${Math.round(usage.inputTokens / usage.outputTokens)}× more than it wrote: trim its context.`);
-        }
         this.tick();
       })
       .catch((error: unknown) => {
@@ -462,6 +465,7 @@ export class KitchenService {
         outputs,
         burnt,
         context: this.context,
+        memory: this.remembered,
         keys: this.keys,
         // The final dish restates the stations' work, so it needs about as much room as all of them.
         maxOutputTokens: Math.max(6000, this.state.totalBudget),
@@ -469,12 +473,12 @@ export class KitchenService {
       });
       if (this.platingRun !== run) return;
       this.state = { ...this.state, status: "served", plating: object, platingUsage: addUsage(this.state.platingUsage, usage) };
+      this.learnFromOrder();
       this.event({ kind: "say", from: "expo", text: "Order up!", detail: object.conflicts.length ? `${object.conflicts.length} note(s) for the head chef` : undefined });
       for (const c of object.conflicts) {
         const who = andList(c.station_ids.map((d) => this.titleOf(d)));
-        this.explain("expo", "conflict", `Sent back${who ? ` (${who})` : ""}: ${clip(c.problem, 120)}`);
+        this.explain("expo", "agree", `${who ? `${who} guessed differently` : "Two chefs guessed differently"}: ${clip(c.problem, 110)} Say it in your order next time.`);
       }
-      this.explainBill();
     } catch (error) {
       if (this.platingRun !== run) return;
       this.state = { ...this.state, status: "failed", error: error instanceof Error ? error.message : String(error) };

@@ -88,12 +88,13 @@ export async function plan(args: {
   models: string[];
   context?: Turn[];
   twist?: string;
+  memory?: string[];
   keys: Keys;
 }): Promise<Call<Menu>> {
   const { object, usage } = await callJson({
     modelId: args.headChef,
     keys: args.keys,
-    prompt: headChefPrompt(args.task, args.models, args.totalBudget, args.context) + (args.twist ? `\n\nNote from the customer: ${args.twist}` : ""),
+    prompt: headChefPrompt(args.task, args.models, args.totalBudget, args.context, args.memory) + (args.twist ? `\n\nNote from the customer: ${args.twist}` : ""),
     schema: MenuSchema,
     maxOutputTokens: 4000,
     effort: "medium",
@@ -116,6 +117,7 @@ export async function runStation(args: {
   upstream: StationOutput[];
   notes: string[];
   context?: Turn[];
+  memory?: string[];
   keys: Keys;
   signal?: AbortSignal;
   hook?: StationHook;
@@ -232,6 +234,7 @@ export async function merge(args: {
   outputs: StationOutput[];
   burnt: StationSpec[];
   context?: Turn[];
+  memory?: string[];
   keys: Keys;
   maxOutputTokens: number;
   signal?: AbortSignal;
@@ -239,7 +242,7 @@ export async function merge(args: {
   return callJson({
     modelId: args.headChef,
     keys: args.keys,
-    prompt: expediterPrompt(args.task, args.outputs, args.burnt, args.context),
+    prompt: expediterPrompt(args.task, args.outputs, args.burnt, args.context, args.memory),
     schema: PlatingSchema,
     maxOutputTokens: args.maxOutputTokens,
     effort: "low",

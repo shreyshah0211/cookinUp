@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { LESSONS } from "@/lib/brigade/lessons";
+import { lessonOf } from "@/lib/brigade/lessons";
 import { modelInfo } from "@/lib/brigade/models";
 import type { ServiceState } from "@/lib/brigade/schemas";
 import { KitchenWorld } from "@/pixel/engine";
@@ -123,9 +123,9 @@ export function PixelKitchen({ state, pickedId, learn, onPick }: { state: Servic
         />
         {whyFor && hover && (
           <div className="why-tip" style={{ left: hover.x * fit.scale, top: hover.y * fit.scale, transform: hover.x * fit.scale > W / 2 ? "translate(calc(-100% - 14px), 12px)" : "translate(14px, 12px)" }}>
-            {whyFor.topic && (
-              <span className="pix-tag mb-1" style={{ background: LESSONS[whyFor.topic].color }}>
-                {LESSONS[whyFor.topic].title}
+            {lessonOf(whyFor.topic) && (
+              <span className="pix-tag mb-1" style={{ background: lessonOf(whyFor.topic)!.color }}>
+                {lessonOf(whyFor.topic)!.title}
               </span>
             )}
             <div>{whyFor.text}</div>

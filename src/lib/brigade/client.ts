@@ -6,9 +6,9 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import type { ServiceState, Turn } from "./schemas";
 
-export type StoredKeys = { anthropic: string; openai: string };
+export type StoredKeys = { anthropic: string; openai: string; google: string };
 const KEYS = "cookinup.keys";
-const NO_KEYS: StoredKeys = { anthropic: "", openai: "" };
+const NO_KEYS: StoredKeys = { anthropic: "", openai: "", google: "" };
 
 // A tiny store over localStorage, so components read the keys with
 // useSyncExternalStore (empty on the server, real on the client, no effect needed).
@@ -51,6 +51,7 @@ function keyHeaders(keys: StoredKeys = readKeys()): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (keys.anthropic) headers["x-anthropic-key"] = keys.anthropic;
   if (keys.openai) headers["x-openai-key"] = keys.openai;
+  if (keys.google) headers["x-google-key"] = keys.google;
   return headers;
 }
 
