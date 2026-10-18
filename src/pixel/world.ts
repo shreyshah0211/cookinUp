@@ -70,14 +70,14 @@ export function courseOrder(stations: StationState[]): StationState[] {
 }
 
 /** Rows the room needs: head zone, three tiers, a walkway, the pass, the expediter, a margin. */
-export const rowsNeeded = () => FIRST_TIER_ROW + GRID.rows * TIER_ROWS + 3;
+export const rowsNeeded = () => FIRST_TIER_ROW + GRID.rows * TIER_ROWS + 4;
 export const colsNeeded = () => Math.max(MIN_COLS, GRID.cols * 5 + 2);
 
 export function buildLayout(cols: number, rows: number, stations: StationState[]): Layout {
   const cx = Math.floor(cols / 2);
   const passY = rows - 3;
-  // Three tiers spread between the head chef and the pass; the last tier's walkway may be the drop row.
-  const pitch = Math.min(7, Math.max(TIER_ROWS, Math.floor((passY - 3 - FIRST_TIER_ROW) / (GRID.rows - 1))));
+  // Three tiers spread between the head chef and the pass, leaving a clear row of floor above the pass.
+  const pitch = Math.min(7, Math.max(TIER_ROWS, Math.floor((passY - 4 - FIRST_TIER_ROW) / (GRID.rows - 1))));
   const colW = (cols - 2) / GRID.cols;
   const spots: Spot[] = [];
   for (let r = 0; r < GRID.rows; r++) {
@@ -123,7 +123,8 @@ export function buildLayout(cols: number, rows: number, stations: StationState[]
   };
   const block = (x: number, y: number) => layout.blocked.add(`${x},${y}`);
   for (let x = 0; x < cols; x++) for (let y = 0; y < WALL_ROWS; y++) block(x, y);
-  for (const s of spots) for (let i = 0; i < 3; i++) block(s.counter.x + i, s.counter.y);
+  // the counter, plus the beacon post beside it
+  for (const s of spots) for (let i = 0; i < 4; i++) block(s.counter.x + i, s.counter.y);
   for (let x = layout.pass.x0; x <= layout.pass.x1; x++) block(x, passY);
   block(layout.desk.x, layout.desk.y);
   block(layout.desk.x + 1, layout.desk.y);

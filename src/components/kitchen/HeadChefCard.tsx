@@ -73,7 +73,7 @@ export function HeadChefCard(p: {
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted">{hasKeys ? "API keys are set in this browser." : "No API keys yet."}</span>
         <button className={`tbtn ${hasKeys ? "" : "tbtn-primary"}`} onClick={p.onKeys}>
-          🔑 {hasKeys ? "Change keys" : "Add API keys"}
+          {hasKeys ? "Change keys" : "Add API keys"}
         </button>
       </div>
       <p className="text-xs text-muted">Changes apply to the next order.</p>

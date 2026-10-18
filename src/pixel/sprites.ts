@@ -12,37 +12,37 @@ export const CHEF_H = 24;
 // `n` neckerchief: the hired model's colour. Skin `s`/`S`, hair `d`/`D` vary per chef.
 const DOWN_IDLE: Rows = [
   "....kkkkkkkk....",
-  "...kLhhhhhhhk...",
+  "...kLLhhhhhhk...",
   "..kLhhhhhhhhHk..",
-  "..kLhhhhhhhhHk..",
-  "..khhhhhhhhhHk..",
+  "..kLhhhHhhhhHk..",
+  "..khhhhhhhhHHk..",
   "...kHHHHHHHHk...",
   "...kLhhhhhhHk...",
   "...kkkkkkkkkk...",
   "...kdddsssddk...",
-  "...kdsessesdk...",
+  "...kdwessewdk...",
   "...kssssNsssk...",
   "...ksRssssRsk...",
   "....kSSmmSSk....",
   "..kkkkjnnjkkkk..",
-  ".kjjjjjknnkjjjJk",
-  ".kjjjjjkjjkjjjJk",
-  ".kjjjjaaaaaajjJk",
-  ".ksjjaaaaaaaajsk",
+  ".kJjjjjknnkjjjJk",
+  ".kJjjjjkjnkjjjJk",
+  ".kJjjjaaaaaajjJk",
+  ".kssjaaaaaaaajsk",
   "..kkaaaaaaaaakk.",
   "...kaaaaaaaaak..",
   "...kAaakkkaaAk..",
   "...kppppkppppk..",
-  "...kppppkppppk..",
-  "...kbbbbkbbbbk..",
+  "...kpPppkppPpk..",
+  "...kbbbBkbbbBk..",
 ];
 
 const UP_IDLE: Rows = [
   "....kkkkkkkk....",
-  "...kLhhhhhhhk...",
+  "...kLLhhhhhhk...",
   "..kLhhhhhhhhHk..",
-  "..kLhhhhhhhhHk..",
-  "..khhhhhhhhhHk..",
+  "..kLhhhHhhhhHk..",
+  "..khhhhhhhhHHk..",
   "...kHHHHHHHHk...",
   "...kLhhhhhhHk...",
   "...kkkkkkkkkk...",
@@ -60,23 +60,23 @@ const UP_IDLE: Rows = [
   "...kjjjjjjjjjk..",
   "...kJJJJJJJJJk..",
   "...kppppkppppk..",
-  "...kppppkppppk..",
-  "...kbbbbkbbbbk..",
+  "...kpPppkppPpk..",
+  "...kbbbBkbbbBk..",
 ];
 
 // Facing right; left is the mirror.
 const SIDE_IDLE: Rows = [
   "....kkkkkkkk....",
-  "...kLhhhhhhhk...",
+  "...kLLhhhhhhk...",
   "..kLhhhhhhhhHk..",
-  "..kLhhhhhhhhHk..",
-  "..khhhhhhhhhHk..",
+  "..kLhhhHhhhhHk..",
+  "..khhhhhhhhHHk..",
   "...kHHHHHHHHk...",
   "...kLhhhhhhHk...",
   "...kkkkkkkkkk...",
   "...kdddsssssk...",
-  "...kdDdssssesk..",
-  "...kdddSsssNk...",
+  "...kdSdssswesk..",
+  "...kdSdSsssNk...",
   "....kddssRssk...",
   ".....kSSSSmk....",
   "...kkkjjjjkkk...",
@@ -88,8 +88,8 @@ const SIDE_IDLE: Rows = [
   "....kaaaaaak....",
   "....kAAAAAAk....",
   "....kppppppk....",
-  "....kppppppk....",
-  "....kbbbbbbk....",
+  "....kpPpppPk....",
+  "....kbbbBbbk....",
 ];
 
 const shiftUp = (rows: Rows): Rows => [...rows.slice(1), ".".repeat(CHEF_W)];
@@ -178,7 +178,9 @@ export function chefPalette(hat: string, look: Look = lookFor("chef")): Palette 
     j: "#f6f3ec",
     J: "#d8d2c6",
     p: "#3b3340",
+    P: "#4a4152",
     b: "#1f1b22",
+    B: "#3a343f",
     w: "#ffffff",
   };
 }
@@ -265,6 +267,17 @@ const GLYPHS: Record<string, string[]> = {
   X: ["101", "101", "010", "101", "101"],
   Y: ["101", "101", "010", "010", "010"],
   Z: ["111", "001", "010", "100", "111"],
+  "0": ["111", "101", "101", "101", "111"],
+  "1": ["010", "110", "010", "010", "111"],
+  "2": ["111", "001", "111", "100", "111"],
+  "3": ["111", "001", "111", "001", "111"],
+  "4": ["101", "101", "111", "001", "001"],
+  "5": ["111", "100", "111", "001", "111"],
+  "6": ["111", "100", "111", "101", "111"],
+  "7": ["111", "001", "010", "010", "010"],
+  "8": ["111", "101", "111", "101", "111"],
+  "9": ["111", "101", "111", "001", "111"],
+  "/": ["001", "001", "010", "100", "100"],
   " ": ["000", "000", "000", "000", "000"],
   "!": ["010", "010", "010", "000", "010"],
   "?": ["110", "001", "010", "000", "010"],
@@ -398,3 +411,77 @@ const CLOCK_FACE: Rows = [
   ".....kkkkk.....",
 ];
 export const clockFace = () => sprite(CLOCK_FACE, { ".": "", k: "#2b2520", r: "#b8603a", w: "#fffdf5" });
+
+// The station lamp: a brass lantern on a slender post. The glass is left
+// transparent and filled with the station's colour when drawn.
+const LAMP: Rows = [
+  "....k....",
+  "...kBk...",
+  "..kbbbk..",
+  ".kbBbbbk.",
+  "kkkkkkkkk",
+  "kb.....bk",
+  "kb.....bk",
+  "kb.....bk",
+  "kb.....bk",
+  "kb.....bk",
+  "kkkkkkkkk",
+  "..kbBbk..",
+  "...kbk...",
+  "...kbk...",
+  "...kbk...",
+  "...kbk...",
+  "..kbBbk..",
+  ".kbbbbbk.",
+  "kkkkkkkkk",
+];
+const BRASS: Palette = { ".": "", k: "#2b2520", b: "#b8893a", B: "#e9c46a" };
+export const lampSprite = () => sprite(LAMP, BRASS);
+/** Where the lamp's glass sits inside the sprite. */
+export const LAMP_GLASS = { x: 2, y: 5, w: 5, h: 5 };
+
+// The call bell on the pass, 10x8.
+const DINGER: Rows = [
+  "....kk....",
+  "...kBBk...",
+  "..kbbbbk..",
+  ".kbBBBBbk.",
+  "kbbbbbbbbk",
+  "kbbbbbbbbk",
+  "kkkkkkkkkk",
+  ".kddddddk.",
+];
+export const dingerSprite = () => sprite(DINGER, { ...BRASS, d: "#4b525b" });
+
+// Dishes on a plate, 12x9 each. A station always serves the same dish.
+const DISH_PALETTE: Palette = {
+  ".": "", k: "#2b2520", w: "#fffdf5", W: "#d8d2c6", b: "#c98a4b", B: "#a66a32", r: "#e76f51", R: "#b84b33", g: "#5aa866", G: "#2f6f3a",
+  y: "#e9c46a", Y: "#c7a24a", o: "#f4a261", p: "#f28482", c: "#f6f3ec", n: "#4a3222", s: "#e9dcc6", t: "#b03a2e", m: "#8d5a3b",
+};
+const DISHES: Rows[] = [
+  // burger
+  ["....bbbb....", "...bbbbbbb..", "...kyykyyk..", "..ggggggggg.", "..rrrrrrrrr.", "...bbbbbbb..", ".kwwwwwwwwk.", "kWWWWWWWWWWk", ".kkkkkkkkkk."],
+  // ramen bowl
+  ["....ssss....", "..rrkyyrpp..", ".kwwwwwwwwk.", ".kwyyyyyywk.", ".kwwwwwwwwk.", "..krrrrrrk..", "...kkkkkk...", ".kWWWWWWWWk.", ".kkkkkkkkkk."],
+  // salad
+  ["............", "...ggrgg....", "..gGgggGgg..", ".ggrggGgggr.", ".kwwwwwwwwk.", "kWWWWWWWWWWk", ".kkkkkkkkkk.", "............", "............"],
+  // pizza slice
+  ["............", ".....yk.....", "....yryk....", "...yyyryk...", "..yryyyyyk..", ".yyyyryyyyk.", "bbbbbbbbbbb.", ".kwwwwwwwwk.", ".kkkkkkkkkk."],
+  // steak and greens
+  ["............", "..mmmm..gg..", ".mRRRmm.ggg.", ".mRRRRm.ggg.", "..mmmm..gg..", ".kwwwwwwwwk.", "kWWWWWWWWWWk", ".kkkkkkkkkk.", "............"],
+  // cake slice
+  ["............", ".....pp.....", "....kppk....", "...kcccck...", "...krrrrk...", "..kcccccck..", "..krrrrrrk..", ".kwwwwwwwwk.", ".kkkkkkkkkk."],
+  // sushi
+  ["............", "............", ".kk..kk..kk.", "krrkkooktkk.", "kccckcccktck", "kkkkkkkkkkkk", ".kWWWWWWWWk.", ".kkkkkkkkkk.", "............"],
+  // pasta
+  ["............", "...yyyyyy...", "..yyrryyyy..", ".yyyyyyrryy.", ".yryyyyyyyy.", ".kwwwwwwwwk.", "kWWWWWWWWWWk", ".kkkkkkkkkk.", "............"],
+];
+export const DISH_W = 12;
+export const DISH_H = 9;
+export const dishSprite = (n: number) => sprite(DISHES[((n % DISHES.length) + DISHES.length) % DISHES.length], DISH_PALETTE);
+/** Which dish a station serves: stable per id. */
+export function dishFor(id: string): number {
+  let h = 0;
+  for (const ch of id) h = (h * 33 + ch.charCodeAt(0)) >>> 0;
+  return h % DISHES.length;
+}

@@ -7,7 +7,8 @@ import { modelInfo } from "@/lib/brigade/models";
 import type { ServiceState, StationState } from "@/lib/brigade/schemas";
 
 import * as D from "./draw";
-import { BUBBLES, BUBBLE_PALETTE, CHEF_FRAMES, CHEF_H, SENIOR_LOOK, TILE, chefPalette, drawLabel, lookFor, sprite, type Look } from "./sprites";
+import { ding } from "./sound";
+import { BUBBLES, BUBBLE_PALETTE, CHEF_FRAMES, CHEF_H, DISH_W, SENIOR_LOOK, TILE, chefPalette, dishFor, dishSprite, drawLabel, lookFor, sprite, type Look } from "./sprites";
 import { WALL_ROWS, buildLayout, findPath, key, type Layout, type Tile } from "./world";
 
 type Facing = "down" | "up" | "left" | "right";
@@ -32,6 +33,8 @@ type Entity = {
   /** The cooking loop: which work tile is next, and when to move on. */
   work: "stove" | "board" | null;
   workUntil: number;
+  /** A finished dish that has not reached the pass yet (survives a relayout). */
+  plateDue: boolean;
 };
 
 const WALK_SPEED = 56; // px per second
@@ -42,6 +45,9 @@ const DOOR_SWING = 1.1; // seconds the door stays open after someone comes throu
 export class KitchenWorld {
   layout: Layout;
   private chefs = new Map<string, Entity>();
+  /** Chefs on their way out after a change of order; drawn until they reach the door. */
+  private leaving: Entity[] = [];
+  private serviceId: string | null = null;
   private head: Entity;
   private expo: Entity;
   private stations: StationState[] = [];
@@ -50,6 +56,9 @@ export class KitchenWorld {
   private plates: string[] = [];
   private t = 0;
   private doorOpenUntil = 0;
+  private servedAt = -100;
+  /** The last few things that happened, for debugging (`__kitchen.events`). */
+  events: string[] = [];
   hovered: string | null = null;
   picked: string | null = null;
 
@@ -99,6 +108,12 @@ export class KitchenWorld {
     }
   }
 
+  /** Which dish a station serves: by its place in the menu, so one service shows different dishes. */
+  private dishOf(id: string): number {
+    const i = this.stations.findIndex((s) => s.id === id);
+    return i >= 0 ? i : dishFor(id);
+  }
+
   /** Where someone is drawn, in native pixels (top of the sprite), for labels. */
   positionOf(id: string): { x: number; y: number } | null {
     const e = id === "head" ? this.head : id === "expo" ? this.expo : this.chefs.get(id);
@@ -111,7 +126,13 @@ export class KitchenWorld {
     this.relayout(cols, rows);
   }
 
+  private note(what: string) {
+    this.events.push(`${this.t.toFixed(1)} ${what}`);
+    if (this.events.length > 60) this.events.shift();
+  }
+
   private relayout(cols: number, rows: number) {
+    this.note(`relayout ${cols}x${rows} stations=${this.stations.length} chefs=${this.chefs.size}`);
     this.layout = buildLayout(cols, rows, this.stations);
     place(this.head, this.layout.head);
     place(this.expo, this.layout.expo);
@@ -119,15 +140,88 @@ export class KitchenWorld {
       const slot = this.layout.slots.get(id);
       if (!slot) continue;
       chef.path = [];
-      chef.tasks = [{ type: "goto", to: slot.chef }, { type: "do", fn: () => (chef.facing = "up") }];
-      chef.carrying = false;
+      chef.tasks = [];
+      chef.waitLeft = 0;
       chef.work = null;
       chef.workUntil = 0;
+      if (chef.plateDue) {
+        // Still holding a finished dish: carry on to the (moved) pass.
+        this.errand(chef, id, slot.chef);
+      } else {
+        chef.carrying = false;
+        chef.tasks.push({ type: "goto", to: slot.chef }, { type: "do", fn: () => (chef.facing = "up") });
+      }
     }
+  }
+
+  /** Everyone at a station walks back out through the swing door. */
+  private dismiss() {
+    for (const chef of this.chefs.values()) {
+      const c = chef;
+      c.path = [];
+      c.tasks = [];
+      c.waitLeft = 0;
+      c.carrying = false;
+      c.plateDue = false;
+      c.work = null;
+      c.tasks.push(
+        { type: "goto", to: this.layout.door },
+        { type: "do", fn: () => (this.doorOpenUntil = this.t + DOOR_SWING) },
+        { type: "do", fn: () => (c.facing = "up") },
+        { type: "wait", ms: 250 },
+        { type: "do", fn: () => (this.leaving = this.leaving.filter((e) => e !== c)) },
+      );
+      this.leaving.push(c);
+    }
+    if (this.chefs.size) this.note(`dismiss ${this.chefs.size}`);
+    this.chefs.clear();
+  }
+
+  /** Run the plate to the pass, leave it there, and come back to the station. */
+  private errand(c: Entity, stationId: string, home: Tile) {
+    c.plateDue = true;
+    c.work = null;
+    c.tasks.push(
+      { type: "do", fn: () => (c.carrying = true) },
+      { type: "goto", to: this.layout.drop },
+      { type: "do", fn: () => (c.facing = "down") },
+      { type: "wait", ms: 350 },
+      {
+        type: "do",
+        fn: () => {
+          c.carrying = false;
+          c.plateDue = false;
+          this.note(`plate ${stationId}`);
+          if (!this.plates.includes(stationId)) this.plates.push(stationId);
+        },
+      },
+      { type: "goto", to: home },
+      {
+        type: "do",
+        fn: () => {
+          c.facing = "down";
+          c.happyUntil = this.t + 3;
+        },
+      },
+    );
   }
 
   /** Reads the service state: new chefs walk in, status changes become errands. */
   sync(state: ServiceState | null) {
+    if ((state?.id ?? null) !== this.serviceId) {
+      // A different order (or none): this brigade leaves, the next one comes in.
+      // An order that was already served when we got here rings no bell.
+      this.dismiss();
+      this.serviceId = state?.id ?? null;
+      this.prevStatus.clear();
+      this.plates = [];
+      this.servedAt = -100;
+      this.status = state?.status === "served" ? "served" : null;
+    }
+    if (state?.status === "served" && this.status !== "served") {
+      this.servedAt = this.t;
+      ding();
+    }
     this.status = state?.status ?? null;
     this.stations = state?.stations ?? [];
     if (state) {
@@ -155,49 +249,34 @@ export class KitchenWorld {
         );
         this.chefs.set(s.id, c);
         chef = c;
+        this.note(`enter ${s.id} status=${s.status}`);
+        // Reopening a chat whose dish is already done: it is on the pass already.
+        if (s.status === "done" && !this.plates.includes(s.id)) this.plates.push(s.id);
       }
       chef.hat = modelInfo(s.model).hat;
       const was = this.prevStatus.get(s.id);
       this.prevStatus.set(s.id, s.status);
+      if (was !== s.status) this.note(`${s.id} ${was ?? "new"} -> ${s.status}`);
       if (s.status === "done" && was && was !== "done") {
-        // Run the plate to the pass, then come back.
-        const c = chef;
-        c.work = null;
-        c.tasks.push(
-          { type: "do", fn: () => (c.carrying = true) },
-          { type: "goto", to: this.layout.drop },
-          { type: "do", fn: () => (c.facing = "down") },
-          { type: "wait", ms: 350 },
-          {
-            type: "do",
-            fn: () => {
-              c.carrying = false;
-              if (!this.plates.includes(s.id)) this.plates.push(s.id);
-            },
-          },
-          { type: "goto", to: slot.chef },
-          {
-            type: "do",
-            fn: () => {
-              c.facing = "down";
-              c.happyUntil = this.t + 3;
-            },
-          },
-        );
+        this.note(`errand ${s.id}`);
+        this.errand(chef, s.id, slot.chef);
       } else if (was === "cooking" && s.status !== "cooking") {
         // Off the stove: back to the middle of the station.
         const c = chef;
         c.work = null;
         if (c.tasks.length === 0) c.tasks.push({ type: "goto", to: slot.chef }, { type: "do", fn: () => (c.facing = "down") });
       }
-      if (s.status !== "done") this.plates = this.plates.filter((id) => id !== s.id);
+      if (s.status !== "done") {
+        this.plates = this.plates.filter((id) => id !== s.id);
+        chef.plateDue = false;
+      }
     }
     for (const id of [...this.chefs.keys()]) if (!ids.has(id)) this.chefs.delete(id);
   }
 
   update(dt: number) {
     this.t += dt;
-    for (const e of [...this.chefs.values(), this.head, this.expo]) this.step(e, dt);
+    for (const e of [...this.chefs.values(), ...this.leaving, this.head, this.expo]) this.step(e, dt);
     // The cooking loop: a few seconds at the stove, a few at the board, and back.
     for (const s of this.stations) {
       const e = this.chefs.get(s.id);
@@ -288,13 +367,12 @@ export class KitchenWorld {
     return "idle";
   }
 
+  /** Speech bubbles are for moments that need you; the station light carries the status. */
   private bubbleOf(e: Entity, mode: Mode): keyof typeof BUBBLES | null {
-    if (e.id === "head") return this.status === "planning" ? "pen" : this.status === "served" ? "check" : null;
-    if (e.id === "expo") return this.status === "served" ? "bell" : this.status === "failed" ? "alert" : null;
+    if (e.id === "head") return this.status === "planning" ? "pen" : null;
+    if (e.id === "expo") return this.status === "failed" ? "alert" : null;
     if (e.carrying) return null;
-    if (mode === "wait") return "dots";
     if (mode === "burnt") return "alert";
-    if (mode === "happy") return "check";
     return null;
   }
 
@@ -323,7 +401,7 @@ export class KitchenWorld {
     ctx.fillRect(0, 0, this.width, this.height);
 
     // floor and walls; the pass end of the room gets the checker tiles
-    for (let y = WALL_ROWS; y < L.rows; y++) for (let x = 0; x < L.cols; x++) D.floorTile(ctx, x, y, y >= L.pass.y - 1);
+    for (let y = WALL_ROWS; y < L.rows; y++) for (let x = 0; x < L.cols; x++) D.floorTile(ctx, x, y, y >= L.pass.y);
     D.wall(ctx, L.cols, WALL_ROWS);
 
     // the back wall, left to right: swing door, ticket rail, window, pictures,
@@ -362,8 +440,7 @@ export class KitchenWorld {
 
     // the pass across the bottom, lamps hanging over it, plates stacked at the ends
     for (let x = L.pass.x0; x <= L.pass.x1; x++) D.passTop(ctx, x * TILE, L.pass.y * TILE, x === L.pass.x0, x === L.pass.x1);
-    const lampsOn = this.status === "cooking" || this.status === "plating";
-    for (let x = L.pass.x0 + 1; x + 1 <= L.pass.x1; x += 4) D.heatLamp(ctx, x * TILE, L.pass.y * TILE - 14, lampsOn, t + x);
+    const lampsOn = this.status === "cooking" || this.status === "plating" || this.status === "served";
     D.plateStack(ctx, L.pass.x0 * TILE + 2, L.pass.y * TILE - 2);
     D.plateStack(ctx, L.pass.x1 * TILE + 2, L.pass.y * TILE - 2);
 
@@ -381,6 +458,9 @@ export class KitchenWorld {
       D.counter(ctx, x + TILE, y);
       D.board(ctx, x + 2 * TILE, y, s ? s.token_budget / maxBudget : 0);
       if (cooking || s?.status === "burnt") D.pot(ctx, x + 4, y + 1);
+      if (s) D.tokenMeter(ctx, x + 9, y - 5, s.usage?.outputTokens ?? 0, s.token_budget, cooking, t);
+      // the station beacon, standing on the floor just right of the counter
+      D.beacon(ctx, x + 3 * TILE + 4, y + 1, s?.status ?? "idle", t + spot.index);
       if (id && (id === this.picked || id === this.hovered)) {
         ctx.strokeStyle = id === this.picked ? "#ffffff" : "#ffffff88";
         ctx.strokeRect(x - 0.5, y - 0.5, 3 * TILE + 1, TILE + 1);
@@ -392,18 +472,26 @@ export class KitchenWorld {
     }
 
     // chefs, back to front
-    const all = [...this.chefs.values(), this.head, this.expo].sort((a, b) => a.y - b.y);
+    const all = [...this.chefs.values(), ...this.leaving, this.head, this.expo].sort((a, b) => a.y - b.y);
     for (const e of all) this.drawChef(ctx, e);
     D.desk(ctx, L.desk.x * TILE, L.desk.y * TILE);
 
     // plates on the pass, the final dish, steam, smoke and chopping bits
-    const perRow = Math.floor(((L.pass.x1 - L.pass.x0 + 1) * TILE - 24) / 14);
+    const perRow = Math.max(1, Math.floor(((L.pass.x1 - L.pass.x0 + 1) * TILE - 28) / (DISH_W + 3)));
     this.plates.forEach((id, i) => {
-      const s = this.stations.find((x) => x.id === id);
-      if (!s) return;
-      D.plate(ctx, L.pass.x0 * TILE + 16 + (i % perRow) * 14, L.pass.y * TILE + 1 + Math.floor(i / perRow) * 4, modelInfo(s.model).hat);
+      ctx.drawImage(dishSprite(this.dishOf(id)), L.pass.x0 * TILE + 16 + (i % perRow) * (DISH_W + 3), L.pass.y * TILE - 3 + Math.floor(i / perRow) * 5);
     });
-    if (this.status === "served") D.cloche(ctx, L.drop.x * TILE + 1, L.pass.y * TILE - 6);
+    // the call bell on the pass; when the order is up: the cloche, sparkles on the bell, the call
+    const bx = L.drop.x * TILE + 1;
+    const by = L.pass.y * TILE - 6;
+    const since = t - this.servedAt;
+    const ringing = this.status === "served" && since < 8;
+    D.dinger(ctx, bx + 18, by + 3, ringing, t);
+    if (this.status === "served") {
+      D.cloche(ctx, bx, by);
+      D.sparkles(ctx, bx + 23, by + 4, t);
+      if (ringing && Math.floor(t * 2) % 2 === 0) drawLabel(ctx, "ORDER UP!", bx + 14, by - 10);
+    }
     for (const s of this.stations) {
       const slot = L.slots.get(s.id);
       if (!slot) continue;
@@ -415,6 +503,11 @@ export class KitchenWorld {
       if (e && this.modeOf(e) === "chop" && e.frame % 2 === 1) D.chopBits(ctx, x + 2 * TILE, y + 1, t);
     }
     if (this.status === "plating") D.steam(ctx, L.drop.x * TILE + 6, L.pass.y * TILE - 2, t);
+
+    // the gantry and heat lamps over the pass, above everyone walking by
+    const railY = L.pass.y * TILE - 24;
+    D.passGantry(ctx, L.pass.x0 * TILE, (L.pass.x1 + 1) * TILE, railY, L.pass.y * TILE);
+    for (let x = L.pass.x0 + 1; x + 1 <= L.pass.x1; x += 4) D.heatLamp(ctx, x * TILE, railY, L.pass.y * TILE, lampsOn, t + x);
 
     // bubbles, then the one-word label over whoever is hovered
     for (const e of all) {
@@ -467,17 +560,16 @@ export class KitchenWorld {
     ctx.drawImage(sprite(rows, pal, flip), x, y);
     if (mode === "burnt") ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (e.carrying) {
-      const s = this.stations.find((st) => st.id === e.id);
-      const color = s ? modelInfo(s.model).hat : "#e9c46a";
-      if (e.facing === "down") D.plate(ctx, x + 3, y + 17, color);
-      else if (e.facing === "right") D.plate(ctx, x + 10, y + 16, color);
-      else if (e.facing === "left") D.plate(ctx, x - 4, y + 16, color);
+      const dish = dishSprite(this.dishOf(e.id));
+      if (e.facing === "down") ctx.drawImage(dish, x + 2, y + 12);
+      else if (e.facing === "right") ctx.drawImage(dish, x + 9, y + 11);
+      else if (e.facing === "left") ctx.drawImage(dish, x - 5, y + 11);
     }
   }
 }
 
 function entity(id: string, hat: string, look: Look, tile: Tile, facing: Facing): Entity {
-  return { id, hat, look, x: tile.x * TILE, y: tile.y * TILE, tile, facing, path: [], tasks: [], waitLeft: 0, frame: 0, frameTimer: 0, carrying: false, happyUntil: 0, work: null, workUntil: 0 };
+  return { id, hat, look, x: tile.x * TILE, y: tile.y * TILE, tile, facing, path: [], tasks: [], waitLeft: 0, frame: 0, frameTimer: 0, carrying: false, happyUntil: 0, work: null, workUntil: 0, plateDue: false };
 }
 
 const slotsKey = (l: Layout) =>

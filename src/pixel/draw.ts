@@ -1,7 +1,7 @@
 // Furniture and floor, drawn as pixel rectangles at native resolution.
 
 import { DECOR } from "./decor";
-import { TILE, clockFace, drawText, plantSprite } from "./sprites";
+import { LAMP_GLASS, TILE, clockFace, dingerSprite, drawText, lampSprite, plantSprite, textWidth } from "./sprites";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -94,14 +94,25 @@ export function window_(ctx: Ctx, x: number, y: number) {
   ctx.drawImage(DECOR.window(), x, y);
 }
 
+/** The chalkboard on the back wall, sized to its lettering. */
 export function menuBoard(ctx: Ctx, x: number, y: number) {
-  ctx.drawImage(DECOR.menuBoard(), x, y);
-  drawText(ctx, "MENU", x + 9, y + 4, "#e9e3d0");
-  R(ctx, x + 5, y + 11, 14, 1, "#b8c9b4");
-  R(ctx, x + 5, y + 14, 18, 1, "#b8c9b4");
-  R(ctx, x + 5, y + 17, 11, 1, "#e9c46a");
-  R(ctx, x + 22, y + 11, 5, 1, "#e76f51");
-  R(ctx, x + 24, y + 14, 3, 1, "#e76f51");
+  const text = "COOKINUP";
+  const w = textWidth(text) + 12;
+  const h = 22;
+  R(ctx, x - 1, y - 1, w + 2, h + 2, C.outline);
+  R(ctx, x, y, w, h, C.wood);
+  R(ctx, x, y, w, 1, C.woodHi);
+  R(ctx, x + 2, y + 2, w - 4, h - 4, C.outline);
+  R(ctx, x + 3, y + 3, w - 6, h - 6, C.chalk);
+  drawText(ctx, text, x + 6, y + 5, "#e9e3d0");
+  R(ctx, x + 6, y + 12, w - 12, 1, "#e9e3d0");
+  R(ctx, x + 6, y + 15, Math.round((w - 12) * 0.7), 1, "#b8c9b4");
+  R(ctx, x + 6, y + 18, Math.round((w - 12) * 0.45), 1, "#e9c46a");
+  R(ctx, x + w - 10, y + 15, 4, 1, "#e76f51");
+  R(ctx, x + 3, y + h - 4, 4, 1, "#fffdf5");
+  R(ctx, x + 8, y + h - 4, 3, 1, "#f28482");
+  R(ctx, x + 2, y + h, 4, 2, C.woodLine);
+  R(ctx, x + w - 6, y + h, 4, 2, C.woodLine);
 }
 
 export function shadowUnder(ctx: Ctx, x: number, y: number, w: number) {
@@ -216,16 +227,37 @@ export function passTop(ctx: Ctx, x: number, y: number, first: boolean, last: bo
   shadowUnder(ctx, x, y + 16, 16);
 }
 
-export function heatLamp(ctx: Ctx, x: number, y: number, on: boolean, t: number) {
-  R(ctx, x + 7, y, 2, 6, C.steelDark);
-  R(ctx, x + 2, y + 6, 12, 3, C.stove);
-  R(ctx, x + 2, y + 6, 12, 1, C.steelLine);
-  R(ctx, x + 3, y + 9, 10, 1, on ? C.flameHot : C.steelDark);
+/** The gantry over the pass: slim uprights at both ends and a thin rail, from which the lamps hang. */
+export function passGantry(ctx: Ctx, x0: number, x1: number, railY: number, counterY: number) {
+  for (const px of [x0 + 3, x1 - 4]) {
+    R(ctx, px, railY, 1, counterY - railY, C.steelDark);
+    R(ctx, px - 1, counterY - 1, 3, 1, C.steelDark);
+  }
+  R(ctx, x0 + 3, railY, x1 - x0 - 6, 2, C.steelDark);
+  R(ctx, x0 + 3, railY, x1 - x0 - 6, 1, C.steelHi);
+}
+
+/** A small heat lamp on a hairline stem; lit, it throws a warm cone down onto the counter. */
+export function heatLamp(ctx: Ctx, x: number, railY: number, counterY: number, on: boolean, t: number) {
+  const y = railY + 2;
+  const shadeBottom = y + 7;
+  const drop = counterY - shadeBottom;
   if (on) {
-    ctx.globalAlpha = 0.16 + 0.05 * Math.sin(t * 3);
-    R(ctx, x - 1, y + 10, 18, 12, C.flameHot);
+    const flicker = 0.9 + 0.1 * Math.sin(t * 7) * Math.sin(t * 3.1);
+    for (let i = 0; i < drop; i++) {
+      const spread = Math.floor((i * 5) / Math.max(1, drop));
+      ctx.globalAlpha = (0.3 - (i / Math.max(1, drop)) * 0.2) * flicker;
+      R(ctx, x + 4 - spread, shadeBottom + i, 8 + spread * 2, 1, "#ffe08a");
+    }
+    ctx.globalAlpha = 0.2 * flicker;
+    R(ctx, x - 2, counterY, 20, 6, "#ffe08a");
     ctx.globalAlpha = 1;
   }
+  R(ctx, x + 8, y, 1, 3, C.steelDark);
+  R(ctx, x + 4, y + 3, 9, 1, C.steelLine);
+  R(ctx, x + 3, y + 4, 11, 2, C.stove);
+  R(ctx, x + 4, y + 6, 9, 1, on ? "#fff4c2" : C.steelDark);
+  if (on) R(ctx, x + 6, y + 7, 5, 1, "#ffd166");
 }
 
 export function plate(ctx: Ctx, x: number, y: number, color: string) {
@@ -411,3 +443,75 @@ export function hangingLamp(ctx: Ctx, x: number, y: number) {
   ctx.globalAlpha = 1;
 }
 
+
+/** The station light on the counter: grey idle, blue waiting, yellow working (pulsing), green done, red burnt. */
+export function stationLight(ctx: Ctx, x: number, y: number, status: "idle" | "waiting" | "cooking" | "done" | "burnt", t: number) {
+  const color = { idle: "#6b7280", waiting: "#4d96ff", cooking: "#ffd166", done: "#2a9d8f", burnt: "#e76f51" }[status];
+  const on = status !== "idle" && (status !== "cooking" || Math.floor(t * 3) % 2 === 0);
+  R(ctx, x, y + 1, 6, 5, C.outline);
+  R(ctx, x + 1, y, 4, 1, C.outline);
+  R(ctx, x + 1, y + 2, 4, 3, C.stove);
+  R(ctx, x + 2, y + 1, 2, 3, status === "idle" ? color : on ? color : C.stoveDark);
+  if (on) {
+    ctx.globalAlpha = 0.35;
+    R(ctx, x + 1, y, 4, 1, color);
+    R(ctx, x - 1, y + 1, 1, 3, color);
+    R(ctx, x + 6, y + 1, 1, 3, color);
+    ctx.globalAlpha = 1;
+  }
+}
+
+/** The station lamp beside a counter: brass lantern, glass in the station's colour, a glow when lit. */
+export function beacon(ctx: Ctx, x: number, y: number, status: "idle" | "waiting" | "cooking" | "done" | "burnt", t: number) {
+  const color = { idle: "#5b6270", waiting: "#4d96ff", cooking: "#ffd166", done: "#2a9d8f", burnt: "#e76f51" }[status];
+  const lit = status !== "idle" && (status !== "cooking" || Math.floor(t * 2.5) % 2 === 0);
+  const gx = x + LAMP_GLASS.x;
+  const gy = y + LAMP_GLASS.y;
+  if (lit) {
+    ctx.globalAlpha = 0.22;
+    R(ctx, gx - 4, gy - 3, LAMP_GLASS.w + 8, LAMP_GLASS.h + 6, color);
+    ctx.globalAlpha = 0.12;
+    R(ctx, gx - 7, gy - 6, LAMP_GLASS.w + 14, LAMP_GLASS.h + 12, color);
+    ctx.globalAlpha = 1;
+  }
+  shadowUnder(ctx, x, y + 19, 9);
+  R(ctx, gx, gy, LAMP_GLASS.w, LAMP_GLASS.h, lit || status === "idle" ? color : C.stoveDark);
+  if (lit || status === "idle") R(ctx, gx + 1, gy + 1, 1, 2, "#ffffff");
+  ctx.drawImage(lampSprite(), x, y);
+}
+
+/** The call bell on the pass; pressed down a pixel while it rings. */
+export function dinger(ctx: Ctx, x: number, y: number, ringing: boolean, t: number) {
+  const press = ringing && Math.floor(t * 8) % 2 === 0 ? 1 : 0;
+  ctx.drawImage(dingerSprite(), x, y + press);
+}
+
+/** Sparkles around the served dish. */
+export function sparkles(ctx: Ctx, x: number, y: number, t: number) {
+  for (let i = 0; i < 6; i++) {
+    const phase = (t * 0.9 + i / 6) % 1;
+    const a = i * 1.05 + t * 0.4;
+    const r = 8 + phase * 12;
+    const px = Math.round(x + Math.cos(a) * r);
+    const py = Math.round(y + Math.sin(a) * r * 0.6 - phase * 6);
+    ctx.globalAlpha = 1 - phase;
+    R(ctx, px, py, 1, 1, "#fff1b8");
+    R(ctx, px - 1, py, 3, 1, "#e9c46a");
+    R(ctx, px, py - 1, 1, 3, "#e9c46a");
+    ctx.globalAlpha = 1;
+  }
+}
+
+/** Tokens used against the station's budget: a slim bar above the counter. */
+export function tokenMeter(ctx: Ctx, x: number, y: number, used: number, budget: number, cooking: boolean, t: number) {
+  const w = 30;
+  const share = budget > 0 ? Math.min(1, used / budget) : 0;
+  R(ctx, x - 1, y - 1, w + 2, 4, C.outline);
+  R(ctx, x, y, w, 2, "#1f2538");
+  if (share > 0) {
+    R(ctx, x, y, Math.max(1, Math.round(share * w)), 2, share > 0.9 ? "#e76f51" : share > 0.7 ? "#f4a261" : "#e9c46a");
+  } else if (cooking) {
+    const px = Math.floor(((t * 24) % (w + 6)) - 6);
+    R(ctx, x + Math.max(0, px), y, Math.min(6, w - Math.max(0, px), px + 6), 2, "#f4a261");
+  }
+}

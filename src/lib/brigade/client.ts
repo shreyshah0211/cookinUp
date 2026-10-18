@@ -70,7 +70,23 @@ export async function stationAction(
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error((await res.json()).error ?? "Station refused");
+  // A finished order is cooking again: anyone listening should reopen its feed.
+  woken.add(serviceId);
+  wakeListeners.forEach((fn) => fn());
 }
+
+// Orders poked back to life after they were served, so useServices re-subscribes to them.
+const woken = new Set<string>();
+const wakeListeners = new Set<() => void>();
+const subscribeWake = (fn: () => void) => {
+  wakeListeners.add(fn);
+  return () => {
+    wakeListeners.delete(fn);
+  };
+};
+let wakeCount = 0;
+const bump = () => ++wakeCount;
+wakeListeners.add(bump);
 
 /** Follows one service's live feed. */
 export function useService(id: string | null): ServiceState | null {
@@ -83,6 +99,76 @@ export function useService(id: string | null): ServiceState | null {
     return () => source.close();
   }, [id]);
   return feed && feed.id === id ? feed.state : null;
+}
+
+/**
+ * Follows several services at once (a whole conversation), each on its own
+ * feed. Feeds close once an order is served or failed; `initial` seeds states
+ * remembered from earlier (so old chats still read after a server restart).
+ */
+export function useServices(ids: string[], initial: Record<string, ServiceState> = {}): Record<string, ServiceState> {
+  const [states, setStates] = useState<Record<string, ServiceState>>(initial);
+  const key = ids.join(",");
+  const done = ids.filter((id) => isOver(states[id])).join(",");
+  const wake = useSyncExternalStore(subscribeWake, () => wakeCount, () => 0);
+  useEffect(() => {
+    const live = ids.filter((id) => !isOver(states[id]) || woken.has(id));
+    const sources = live.map((id) => {
+      const source = new EventSource(`/api/service/${id}/events`);
+      source.onmessage = (e) => {
+        const next = JSON.parse(e.data) as ServiceState;
+        // Once the re-run has started, the normal "still cooking" rule keeps the feed open.
+        if (!isOver(next)) woken.delete(id);
+        setStates((prev) => ({ ...prev, [id]: next }));
+      };
+      // A feed that cannot open (the server forgot the service) just keeps whatever we remembered.
+      source.onerror = () => source.close();
+      return source;
+    });
+    return () => sources.forEach((s) => s.close());
+    // Re-subscribe when the set of ids or the set of finished ids changes, or an order is woken.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, done, wake]);
+  return states;
+}
+
+const isOver = (s?: ServiceState) => !!s && (s.status === "served" || s.status === "failed");
+
+// --- the conversation list, remembered in this browser ---
+
+export type Chat = { id: string; title: string; orderIds: string[]; createdAt: number };
+const CHATS = "cookinup.chats";
+const SNAPSHOTS = "cookinup.snapshots";
+
+export function loadChats(): Chat[] {
+  try {
+    return JSON.parse(localStorage.getItem(CHATS) ?? "[]") as Chat[];
+  } catch {
+    return [];
+  }
+}
+export function saveChats(chats: Chat[]) {
+  try {
+    localStorage.setItem(CHATS, JSON.stringify(chats));
+  } catch {
+    // Private window: the list lives for this page load only.
+  }
+}
+export function loadSnapshots(): Record<string, ServiceState> {
+  try {
+    return JSON.parse(localStorage.getItem(SNAPSHOTS) ?? "{}") as Record<string, ServiceState>;
+  } catch {
+    return {};
+  }
+}
+export function saveSnapshots(states: Record<string, ServiceState>, keep: string[]) {
+  try {
+    const kept: Record<string, ServiceState> = {};
+    for (const id of keep) if (states[id]) kept[id] = states[id];
+    localStorage.setItem(SNAPSHOTS, JSON.stringify(kept));
+  } catch {
+    // Too big or unavailable: the live feeds still work.
+  }
 }
 
 /** A once-a-second clock for the station timers, ticking only while something cooks. */

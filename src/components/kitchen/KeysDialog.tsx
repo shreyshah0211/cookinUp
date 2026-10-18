@@ -10,7 +10,7 @@ export function KeysDialog({ keys, onClose }: { keys: StoredKeys; onClose: () =>
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div className="flex w-full max-w-md flex-col gap-3 rounded-lg border border-amber bg-paper p-4 text-[13px]" onClick={(e) => e.stopPropagation()}>
-        <div className="font-bold text-amber">🔑 Hiring papers</div>
+        <div className="font-bold text-amber">API keys</div>
         <p className="text-xs text-muted">
           API keys are billed per use by each provider (a ChatGPT Plus or Claude Pro subscription does not work here). They are kept in this browser&apos;s local storage, sent to the kitchen only
           when you place an order, and never logged or stored on the server.
