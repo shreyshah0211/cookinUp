@@ -4,6 +4,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 
+import type { Provider } from "./models";
 import type { ServiceState, Turn } from "./schemas";
 
 export type StoredKeys = { anthropic: string; openai: string; google: string };
@@ -46,9 +47,25 @@ export function useKeys(): StoredKeys {
   );
 }
 
+/** An anonymous id for this browser, so the kitchen's memory of you is yours alone. */
+function visitorId(): string {
+  try {
+    let id = localStorage.getItem("cookinup.visitor");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("cookinup.visitor", id);
+    }
+    return id;
+  } catch {
+    return "";
+  }
+}
+
 /** Headers carrying the keys: sent with every call that may hire a chef, never stored server-side. */
 function keyHeaders(keys: StoredKeys = readKeys()): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const visitor = visitorId();
+  if (visitor) headers["x-visitor-id"] = visitor;
   if (keys.anthropic) headers["x-anthropic-key"] = keys.anthropic;
   if (keys.openai) headers["x-openai-key"] = keys.openai;
   if (keys.google) headers["x-google-key"] = keys.google;
@@ -135,19 +152,45 @@ export function useServices(ids: string[], initial: Record<string, ServiceState>
   const wake = useSyncExternalStore(subscribeWake, () => wakeCount, () => 0);
   useEffect(() => {
     const live = ids.filter((id) => !isOver(states[id]) || woken.has(id));
-    const sources = live.map((id) => {
-      const source = new EventSource(`/api/service/${id}/events`);
-      source.onmessage = (e) => {
-        const next = JSON.parse(e.data) as ServiceState;
+    const stops = live.map((id) => {
+      const take = (next: ServiceState) => {
         // Once the re-run has started, the normal "still cooking" rule keeps the feed open.
         if (!isOver(next)) woken.delete(id);
         setStates((prev) => ({ ...prev, [id]: next }));
       };
-      // A feed that cannot open (the server forgot the service) just keeps whatever we remembered.
-      source.onerror = () => source.close();
-      return source;
+      let heard = false;
+      let poller: ReturnType<typeof setInterval> | undefined;
+      // Some proxies (e.g. quick tunnels) hold server-sent events back; if the
+      // feed stays quiet, ask for the state every second instead.
+      const poll = () => {
+        if (poller) return;
+        source.close();
+        const once = async () => {
+          const res = await fetch(`/api/service/${id}`, { cache: "no-store" }).catch(() => null);
+          if (!res || res.status === 404) return clearInterval(poller);
+          if (!res.ok) return;
+          const next = (await res.json()) as ServiceState;
+          take(next);
+          if (isOver(next)) clearInterval(poller);
+        };
+        void once();
+        poller = setInterval(() => void once(), 1000);
+      };
+      const source = new EventSource(`/api/service/${id}/events`);
+      source.onmessage = (e) => {
+        heard = true;
+        take(JSON.parse(e.data) as ServiceState);
+      };
+      // A feed that cannot open falls back to polling, which stops by itself if the server forgot the service.
+      source.onerror = () => poll();
+      const quiet = setTimeout(() => !heard && poll(), 2500);
+      return () => {
+        source.close();
+        clearTimeout(quiet);
+        clearInterval(poller);
+      };
     });
-    return () => sources.forEach((s) => s.close());
+    return () => stops.forEach((stop) => stop());
     // Re-subscribe when the set of ids or the set of finished ids changes, or an order is woken.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, done, wake]);
@@ -226,4 +269,22 @@ export function fmtElapsed(from?: number, to?: number): string {
 
 export function fmtUsd(n: number): string {
   return n < 0.01 && n > 0 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
+}
+
+/** The demo's shared keys, if the server lends any: which providers, and today's budget left. */
+export type House = { providers: Provider[]; remainingUsd: number; budgetUsd: number; maxTokens: number };
+
+export function useHouse(refreshKey: unknown): House | null {
+  const [house, setHouse] = useState<House | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/kitchen", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((h: House | null) => live && setHouse(h))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [refreshKey]);
+  return house;
 }

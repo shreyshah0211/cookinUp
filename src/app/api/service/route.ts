@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import { DEFAULT_HEAD_CHEF, MODEL_IDS } from "@/lib/brigade/models";
+import { cleanVisitor } from "@/lib/brigade/memory";
+import { houseBudgetUsd, houseMaxTokens, houseOpen, houseProviders, trackHouseOrder } from "@/lib/brigade/house";
 import { keysFromRequest } from "@/lib/brigade/providers";
 import { putService } from "@/lib/brigade/registry";
 import { KitchenService } from "@/lib/brigade/service";
@@ -21,7 +23,15 @@ const Body = z.object({
 export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Bad order ticket" }, { status: 400 });
-  const { task, totalBudget, headChef, context, review, twist } = parsed.data;
+  const { task, headChef, context, review, twist } = parsed.data;
+  let { totalBudget } = parsed.data;
+  const keys = keysFromRequest(request);
+  // No keys of your own: cook on the house's keys, within its daily budget and a smaller pantry.
+  const house = !keys.ownOnly && houseProviders().length > 0;
+  if (house && !houseOpen()) {
+    return Response.json({ error: `The demo's shared budget for today ($${houseBudgetUsd()}) is used up. Add your own API key under Keys to keep cooking.` }, { status: 402 });
+  }
+  if (house) totalBudget = Math.min(totalBudget, houseMaxTokens());
   const service = new KitchenService({
     id: crypto.randomUUID(),
     task,
@@ -30,9 +40,11 @@ export async function POST(request: Request) {
     context,
     review,
     twist,
-    keys: keysFromRequest(request),
+    keys,
+    visitor: cleanVisitor(request.headers.get("x-visitor-id")),
   });
   putService(service);
+  if (house) trackHouseOrder(service.state.id);
   void service.start();
   return Response.json({ id: service.state.id });
 }

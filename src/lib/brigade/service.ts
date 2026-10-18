@@ -43,8 +43,12 @@ export class KitchenService {
   /** A challenge's hidden note to the head chef (e.g. a deliberately vague brief). */
   private twist?: string;
 
-  constructor(args: { id: string; task: string; keys: Keys; headChef: string; totalBudget: number; context?: Turn[]; review?: boolean; twist?: string }) {
+  /** Whose memory this order reads and writes (an anonymous per-browser id). */
+  private visitor?: string;
+
+  constructor(args: { id: string; task: string; keys: Keys; headChef: string; totalBudget: number; context?: Turn[]; review?: boolean; twist?: string; visitor?: string }) {
     this.keys = args.keys;
+    this.visitor = args.visitor;
     this.context = args.context ?? [];
     this.review = !!args.review;
     this.twist = args.twist;
@@ -128,7 +132,7 @@ export class KitchenService {
     }
     const fresh = out.filter((m) => !this.written.has(m.content));
     fresh.forEach((m) => this.written.add(m.content));
-    void remember(fresh);
+    void remember(fresh, this.visitor);
   }
 
   private titleOf(id: string) {
@@ -145,7 +149,7 @@ export class KitchenService {
 
   /** Keys added since the order was placed: more chefs become hireable. Blank keys change nothing. */
   updateKeys(keys: Keys) {
-    const next = { anthropic: keys.anthropic || this.keys.anthropic, openai: keys.openai || this.keys.openai, google: keys.google || this.keys.google };
+    const next = { anthropic: keys.anthropic || this.keys.anthropic, openai: keys.openai || this.keys.openai, google: keys.google || this.keys.google, ownOnly: this.keys.ownOnly };
     if (next.anthropic === this.keys.anthropic && next.openai === this.keys.openai && next.google === this.keys.google) return;
     this.keys = next;
     this.state = { ...this.state, hireable: hireable(next) };
@@ -162,7 +166,7 @@ export class KitchenService {
       this.event({ kind: "think", from: "head", text: "Reading the ticket", detail: this.state.task });
       // The head chef picks a chef for every station from everyone there is a key for.
       // Read memory once, before planning; nothing is written until the order is served.
-      this.remembered = await recall(this.state.task);
+      this.remembered = await recall(this.state.task, this.visitor);
       const { object: menu, usage } = await plan({
         task: this.state.task,
         headChef: this.state.headChef,

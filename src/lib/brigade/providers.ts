@@ -6,23 +6,29 @@ import type { JSONValue, LanguageModel } from "ai";
 import { MODELS, modelInfo, type Provider } from "./models";
 
 /** Bring-your-own keys. Held in memory for one service; never logged or stored. */
-export type Keys = { anthropic?: string; openai?: string; google?: string };
+/** `ownOnly`: the visitor brought keys, so the house's (env) keys are not used for them. */
+export type Keys = { anthropic?: string; openai?: string; google?: string; ownOnly?: boolean };
+
+/** A house (env) key, unless this visitor cooks on their own keys only. */
+const env = (keys: Keys, name: string) => (keys.ownOnly ? undefined : process.env[name]);
 
 /** The keys the browser sent with a request (headers only; never stored). */
 export function keysFromRequest(request: Request): Keys {
-  return {
-    anthropic: request.headers.get("x-anthropic-key") ?? undefined,
-    openai: request.headers.get("x-openai-key") ?? undefined,
-    google: request.headers.get("x-google-key") ?? undefined,
+  const keys: Keys = {
+    anthropic: request.headers.get("x-anthropic-key") || undefined,
+    openai: request.headers.get("x-openai-key") || undefined,
+    google: request.headers.get("x-google-key") || undefined,
   };
+  // Bring any key of your own and you cook on your keys only.
+  return { ...keys, ownOnly: !!(keys.anthropic || keys.openai || keys.google) };
 }
 
 /** The providers a service can actually call: a key from the browser, or a dev key in the env. */
 export function availableProviders(keys: Keys): Provider[] {
   const out: Provider[] = [];
-  if (keys.anthropic || process.env.ANTHROPIC_API_KEY) out.push("anthropic");
-  if (keys.openai || process.env.OPENAI_API_KEY) out.push("openai");
-  if (keys.google || process.env.GOOGLE_GENERATIVE_AI_API_KEY) out.push("google");
+  if (keys.anthropic || env(keys, "ANTHROPIC_API_KEY")) out.push("anthropic");
+  if (keys.openai || env(keys, "OPENAI_API_KEY")) out.push("openai");
+  if (keys.google || env(keys, "GOOGLE_GENERATIVE_AI_API_KEY")) out.push("google");
   return out;
 }
 
@@ -33,18 +39,18 @@ export function hireable(keys: Keys): string[] {
 }
 
 function anthropicFor(keys: Keys) {
-  const apiKey = keys.anthropic || process.env.ANTHROPIC_API_KEY;
+  const apiKey = keys.anthropic || env(keys, "ANTHROPIC_API_KEY");
   if (!apiKey) throw new Error("No Anthropic API key: add one in the kitchen settings.");
   return createAnthropic({ apiKey });
 }
 function openaiFor(keys: Keys) {
-  const apiKey = keys.openai || process.env.OPENAI_API_KEY;
+  const apiKey = keys.openai || env(keys, "OPENAI_API_KEY");
   if (!apiKey) throw new Error("No OpenAI API key: add one in the kitchen settings.");
   return createOpenAI({ apiKey });
 }
 
 function googleFor(keys: Keys) {
-  const apiKey = keys.google || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const apiKey = keys.google || env(keys, "GOOGLE_GENERATIVE_AI_API_KEY");
   if (!apiKey) throw new Error("No Gemini API key: add one in the kitchen settings.");
   return createGoogleGenerativeAI({ apiKey });
 }

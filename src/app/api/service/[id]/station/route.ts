@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { houseOpen, isHouseOrder } from "@/lib/brigade/house";
 import { keysFromRequest } from "@/lib/brigade/providers";
 import { getService } from "@/lib/brigade/registry";
 
@@ -25,6 +26,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Bad request" }, { status: 400 });
   const { stationId, action, instruction, model, token_budget, stations } = parsed.data;
+  // Re-cooking a house-key order spends the shared budget too.
+  if (isHouseOrder(id) && !houseOpen() && action !== "stop") {
+    return Response.json({ error: "The demo's shared budget for today is used up. Add your own API key under Keys to keep cooking." }, { status: 402 });
+  }
   // Keys added since the order was placed ride along, so a new provider's chefs can be hired now.
   service.updateKeys(keysFromRequest(request));
   try {

@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { CHALLENGES, challengeById, type Challenge } from "@/lib/brigade/challenges";
-import { conversationFor, gradeOrder, loadChats, loadSnapshots, placeOrder, saveChats, saveSnapshots, stationAction, useKeys, useServices, type Chat } from "@/lib/brigade/client";
+import { conversationFor, gradeOrder, useHouse, loadChats, loadSnapshots, placeOrder, saveChats, saveSnapshots, stationAction, useKeys, useServices, type Chat } from "@/lib/brigade/client";
 import { coach } from "@/lib/brigade/coach";
 import { LESSONS, lessonOf, TOPICS, type Topic } from "@/lib/brigade/lessons";
 import { DEFAULT_BUDGET, DEFAULT_HEAD_CHEF, MODELS } from "@/lib/brigade/models";
@@ -46,11 +46,18 @@ const STATUS_WORD: Record<ServiceState["status"], string> = { planning: "plannin
 
 export function Kitchen() {
   const keys = useKeys();
-  const hasKeys = !!(keys.anthropic || keys.openai || keys.google);
+  const ownKeys = !!(keys.anthropic || keys.openai || keys.google);
+  // No keys of your own: the demo may lend its own, within a daily budget (checked again after each order).
+  const [houseTick, setHouseTick] = useState(0);
+  const house = useHouse(houseTick);
+  const onHouse = !ownKeys && !!house && house.providers.length > 0 && house.remainingUsd > 0;
+  const hasKeys = ownKeys || onHouse;
+  // Which providers this visitor can cook with: their own keys, or the house's.
+  const providers = useMemo(() => (ownKeys ? MODELS.map((m) => m.provider).filter((p) => keys[p]) : onHouse ? house!.providers : []), [ownKeys, keys, onHouse, house]);
   const [headChef, setHeadChef] = useState(DEFAULT_HEAD_CHEF);
   const [totalBudget, setTotalBudget] = useState(DEFAULT_BUDGET);
   // Any chef whose provider has a key can be hired, now or on a re-run.
-  const hireable = useMemo(() => MODELS.filter((m) => keys[m.provider]).map((m) => m.id), [keys]);
+  const hireable = useMemo(() => MODELS.filter((m) => providers.includes(m.provider)).map((m) => m.id), [providers]);
 
   // Which window is open, and where it was opened from.
   const [open, setOpen] = useState<Open | null>(null);
@@ -255,6 +262,7 @@ export function Kitchen() {
       const context = challenge ? [] : conversationFor(orders);
       const id = await placeOrder({ task, totalBudget, headChef, keys, context, review: challenge ? challenge.review : reviewMenu, twist: challenge?.twist });
       setDraft("");
+      setHouseTick((n) => n + 1);
       setChats((cs) => cs.map((c) => (c.id === active.id ? { ...c, title: c.title || task.slice(0, 60), orderIds: [...c.orderIds, id] } : c)));
     } catch (e) {
       setOrderError(e instanceof Error ? e.message : String(e));
@@ -400,12 +408,12 @@ export function Kitchen() {
       )}
       {open?.kind === "keys" && (
         <Popup title="API keys" width={460} onClose={() => show(null)}>
-          <KeysDialog keys={keys} onClose={() => show(null)} />
+          <KeysDialog keys={keys} house={house} onClose={() => show(null)} />
         </Popup>
       )}
       {open?.kind === "head" && (
         <Popup title="Head chef" tag="settings" width={400} anchor={anchor} onClose={() => show(null)}>
-          <HeadChefCard headChef={headChef} onHeadChef={setHeadChef} totalBudget={totalBudget} onTotalBudget={setTotalBudget} review={reviewMenu} onReview={toggleReview} keys={keys} onKeys={() => show({ kind: "keys" })} />
+          <HeadChefCard headChef={headChef} onHeadChef={setHeadChef} totalBudget={totalBudget} onTotalBudget={setTotalBudget} review={reviewMenu} onReview={toggleReview} keys={keys} providers={providers} onHouse={onHouse} onKeys={() => show({ kind: "keys" })} />
         </Popup>
       )}
       {open?.kind === "mind" && (

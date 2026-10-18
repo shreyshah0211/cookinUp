@@ -9,9 +9,9 @@ import { MODELS, modelInfo, TIER_NAMES, tierOf, type Provider } from "@/lib/brig
 import { PixelChef } from "./PixelChef";
 import { stars } from "./StationRow";
 
-export function HeadChefCard(p: { headChef: string; onHeadChef: (m: string) => void; totalBudget: number; onTotalBudget: (n: number) => void; review: boolean; onReview: (on: boolean) => void; keys: StoredKeys; onKeys: () => void }) {
+export function HeadChefCard(p: { headChef: string; onHeadChef: (m: string) => void; totalBudget: number; onTotalBudget: (n: number) => void; review: boolean; onReview: (on: boolean) => void; keys: StoredKeys; providers: Provider[]; onHouse: boolean; onKeys: () => void }) {
   const hasKeys = !!(p.keys.anthropic || p.keys.openai || p.keys.google);
-  const noKey = (provider: Provider) => hasKeys && !p.keys[provider];
+  const noKey = (provider: Provider) => p.providers.length > 0 && !p.providers.includes(provider);
   return (
     <div className="flex flex-col gap-3 text-[13px]">
       <div className="flex items-center gap-2">
@@ -43,7 +43,7 @@ export function HeadChefCard(p: { headChef: string; onHeadChef: (m: string) => v
         <input type="checkbox" checked={p.review} onChange={(e) => p.onReview(e.target.checked)} />
       </label>
       <div className="flex items-center justify-between text-xs">
-        <span className="text-muted">{hasKeys ? "API keys are set in this browser." : "No API keys yet."}</span>
+        <span className="text-muted">{hasKeys ? "API keys are set in this browser." : p.onHouse ? "Cooking on the demo's shared keys." : "No API keys yet."}</span>
         <button className={`pix-btn ${hasKeys ? "pix-btn-plain" : ""}`} onClick={p.onKeys}>
           {hasKeys ? "Change keys" : "Add API keys"}
         </button>
